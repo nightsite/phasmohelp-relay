@@ -1,75 +1,77 @@
 # Phasmo Overlay
 
-Ein Always-on-Top-Overlay für **Phasmophobia** mit der vollen Geister-/Beweis-Logik
-des Cheat-Sheets (inspiriert von tybayn's Phasmo Cheat Sheet). Du klickst die
-gefundenen Beweise an, das Overlay filtert die passenden Geister und zeigt dir
-Tempo, Jagd-Schwelle, Verhalten und Tipps.
+Always-on-top-Hilfe für **Phasmophobia**: Beweise filtern, Geister-Tipps, Online-Sync.
 
-> **Hinweis zur Journal-Sync:** Eine automatische Verbindung mit dem In-Game-Journal
-> ist nicht enthalten – Phasmophobia bietet dafür keine offizielle Schnittstelle,
-> und das Auslesen des Spielspeichers wäre unzuverlässig und könnte (Anti-Cheat) zum
-> Bann führen. Du trägst die Beweise stattdessen ins Overlay ein.
+## Ordnerstruktur
 
-## Starten
+```
+phasmohelp/
+├── PhasmoOverlay.bat      ← App starten (gebaut)
+├── start-dev.bat          ← Entwicklung (npm start)
+├── main.js, renderer/     ← App-Quellcode
+├── build/icon.png         ← App-Icon
+├── server/                ← Online-Relay (Cloud)
+├── dist/
+│   ├── PhasmoOverlay/PhasmoOverlay.exe
+│   └── PhasmoOverlay-Setup-x.x.x.exe   ← Windows-Installer
+└── .github/workflows/     ← Release-Build bei Git-Tag v*
+```
 
-1. **Doppelklick auf `start.bat`** – beim ersten Mal wird Electron automatisch
-   installiert (einmalig, ein paar hundert MB), danach startet das Overlay.
+## Freunden teilen (eine Datei reicht)
 
-   Alternativ im Terminal:
-   ```
-   npm install
-   npm start
-   ```
+**Nicht** den ganzen `dist/PhasmoOverlay/`-Ordner schicken — das sind viele DLLs.
 
-## Wichtig: Spiel im Borderless-Modus
+| Datei | Für wen |
+|-------|---------|
+| **`PhasmoOverlay-Portable-1.0.0.exe`** | Einfachste Option: eine Datei, Doppelklick, fertig (kein Install) |
+| **`PhasmoOverlay-Setup-1.0.0.exe`** | Mit Installer + Desktop-Verknüpfung |
 
-Damit das Overlay über dem Spiel sichtbar ist, stelle Phasmophobia in den
-**Optionen → Anzeige** auf **Borderless** (Rahmenloses Fenster) oder **Windowed**.
-Über echtem Vollbild (Exclusive Fullscreen) können sich keine Overlays legen.
+Beide liegen nach einem Release auf GitHub unter **Releases**:
+https://github.com/nightsite/phasmohelp-relay/releases
+
+Link an Freunde schicken → Portable oder Setup runterladen → starten. Sync-Relay läuft online, nichts extra installieren.
+
+Lokal bauen: `npm run dist:release` → Dateien in `dist/`
+
+## App starten
+
+### Gebaut (empfohlen)
+1. `npm run dist` (Ordner) oder `npm run dist:installer` (Installer + Ordner)
+2. **`PhasmoOverlay.bat`** oder `dist\PhasmoOverlay\PhasmoOverlay.exe`
+
+### Entwicklung
+`start-dev.bat` oder `npm start`
+
+## Features (Polish)
+
+| Feature | Beschreibung |
+|---------|--------------|
+| Fenster merken | Position & Größe werden gespeichert |
+| System Tray | Minimieren → Tray, Rechtsklick-Menü |
+| Kompakt-Modus | Nur Beweise + Status (⚙) |
+| Themes | Standard / Midnight / Ember + Akzentfarbe |
+| Sync-Status | Dot: grau/gelb/grün/rot + Raum & Ping |
+| Auto-Update | Über GitHub Releases (gebaute .exe) |
+| Erststart-Assistent | Willkommen, Hotkey, Schwierigkeit |
+
+## Online-Sync
+
+Relay: `wss://phasmohelp-relay.onrender.com` + gleicher Raumcode im 🔗-Panel.
+
+## Spiel-Einstellungen
+
+Phasmophobia: **Borderless** oder **Windowed**.
 
 ## Bedienung
 
-- **Linksklick** auf einen Beweis = *gefunden* (grün ✔)
-- **Rechtsklick** auf einen Beweis = *ausschließen* (rot ✕)
-- Erneuter Klick hebt den Zustand wieder auf.
-- Geist anklicken = Details ein-/ausklappen.
-- Titelleiste ziehen = Overlay verschieben.
-
-### Tastenkürzel (global, auch während des Spiels)
-
-| Kürzel | Funktion |
+| Aktion | Funktion |
 |---|---|
-| `Strg + Shift + O` | Overlay ein-/ausblenden |
-| `Strg + Shift + C` | Klick-durch ein/aus (Maus geht ans Spiel, Overlay bleibt sichtbar) |
-| `Strg + Shift + R` | Alle Beweise zurücksetzen |
+| Linksklick Beweis | gefunden ✔ |
+| Rechtsklick Beweis | ausgeschlossen ✕ |
+| `H` (änderbar) | Overlay ein/aus |
+| `Strg+Shift+C` | Klick-durch |
+| `Strg+Shift+R` | Beweise zurücksetzen |
 
-### Einstellungen (⚙)
+## Releases
 
-- **Sichtbare Beweise**: 3 (Amateur–Profi), 2 (Albtraum), 1 (Wahnsinn), 0 (Apokalypse).
-  Bei weniger Beweisen schließt das Filtern entsprechend vorsichtiger aus.
-- **Deckkraft**, **unmögliche Geister anzeigen**, **Verhalten/Tipps anzeigen**.
-
-## Eigene Beweis-Icons (echte Spielgrafiken)
-
-Die Beweis-Symbole sind eingebaute Vektor-Grafiken. Wenn du stattdessen die
-**echten Spielgrafiken** möchtest, lege einfach passende PNGs (am besten mit
-transparentem Hintergrund) in den Ordner `renderer/icons/` – sie werden beim
-nächsten Start automatisch verwendet:
-
-| Datei | ersetzt |
-|---|---|
-| `renderer/icons/emf.png` | EMF-Reader-Symbol |
-| `renderer/icons/spiritbox.png` | Spirit-Box-Symbol |
-
-Fehlt eine Datei, wird automatisch das eingebaute Vektor-Icon angezeigt.
-(Weitere Beweise lassen sich in `renderer/data.js` per `png:`-Eintrag genauso umstellen.)
-
-## Aufbau
-
-| Datei | Zweck |
-|---|---|
-| `main.js` | Electron-Hauptprozess: transparentes Always-on-Top-Fenster, globale Hotkeys |
-| `preload.js` | sichere Brücke zwischen Fenster und Hauptprozess |
-| `renderer/data.js` | Geister-Daten (Beweise, Tempo, Jagd, Verhalten) |
-| `renderer/app.js` | Filter-Logik + Oberfläche |
-| `renderer/index.html`, `styles.css` | Layout & Design |
+Tag `v1.0.1` pushen → GitHub Action baut Installer und lädt Assets hoch.

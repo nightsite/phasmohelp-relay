@@ -3,10 +3,17 @@
   "version": "1.0.0",
   "description": "Always-on-top Phasmophobia evidence/ghost cheat-sheet overlay",
   "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nightsite/phasmohelp-relay.git"
+  },
   "scripts": {
     "start": "electron .",
     "relay": "npm start --prefix server",
-    "dist": "electron-builder"
+    "dist": "electron-builder --win dir && node scripts/finalize-dist.js",
+    "dist:portable": "electron-builder --win portable && node scripts/finalize-dist.js",
+    "dist:installer": "electron-builder --win && node scripts/finalize-dist.js",
+    "dist:release": "electron-builder --win dir nsis portable && node scripts/finalize-dist.js"
   },
   "author": "",
   "license": "MIT",
@@ -15,6 +22,7 @@
     "electron-builder": "^24.13.3"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "uiohook-napi": "^1.5.5"
   },
   "build": {
@@ -23,19 +31,43 @@
     "files": [
       "main.js",
       "config.js",
+      "logger.js",
       "preload.js",
+      "build/icon.png",
       "renderer/**/*",
       "!**/*.map"
     ],
     "asarUnpack": [
       "**/node_modules/uiohook-napi/**"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nightsite",
+        "repo": "phasmohelp-relay"
+      }
+    ],
     "win": {
-      "target": "portable",
+      "target": [
+        { "target": "dir", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png",
       "signAndEditExecutable": false
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Phasmo Overlay",
+      "artifactName": "PhasmoOverlay-Setup-${version}.exe"
+    },
+    "directories": {
+      "output": "dist"
+    },
     "portable": {
-      "artifactName": "PhasmoOverlay-${version}.exe"
+      "artifactName": "PhasmoOverlay-Portable-${version}.exe"
     }
   }
 }

@@ -23,9 +23,12 @@ const sync = {
   ws: null,
   id: null,
   connected: false,
+  phase: 'off', // off | connecting | connected | error
   reconnectTimer: null,
   manualOff: false,
-  peers: new Map(), // id -> { name, color, evidence, pins }
+  peers: new Map(),
+  pingTimer: null,
+  lastPingMs: null,
 };
 
 function normalizeWsUrl(url) {
@@ -55,18 +58,79 @@ function saveSyncConfig(patch) {
   window.overlay?.setConfig({ sync: patch });
 }
 
-function setSyncUi(connected) {
+function saveUiConfig(patch) {
+  window.overlay?.setConfig({ ui: patch });
+}
+
+function relayHealthUrl(wsUrl) {
+  try {
+    const u = new URL(normalizeWsUrl(wsUrl));
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = '/health';
+    u.search = '';
+    return u.toString();
+  } catch (_) {
+    return '';
+  }
+}
+
+function setSyncState(phase, detail) {
+  sync.phase = phase;
   const dot = document.getElementById('sync-dot');
   const status = document.getElementById('sync-status');
   const btn = document.getElementById('sync-connect');
+  const room = (document.getElementById('sync-room')?.value || '').trim().toUpperCase();
+  const peerCount = sync.peers.size;
+
   if (dot) {
-    dot.classList.toggle('on', connected);
-    dot.classList.toggle('off', !connected);
-    dot.title = connected ? 'Sync verbunden' : 'Sync getrennt';
+    dot.className = 'sync-dot ' + (phase === 'connected' ? 'on' : phase);
   }
-  if (status) status.textContent = connected ? 'Verbunden' : 'Getrennt';
-  if (btn) btn.textContent = connected ? 'Trennen' : 'Verbinden';
+
+  const labels = {
+    off: 'Sync getrennt',
+    connecting: 'Verbinde …',
+    connected: 'Sync verbunden',
+    error: 'Sync-Fehler',
+  };
+  let title = labels[phase] || labels.off;
+  if (room) title += ` · Raum ${room}`;
+  if (phase === 'connected') title += ` · ${peerCount} Mitspieler`;
+  if (sync.lastPingMs != null && phase === 'connected') title += ` · ${sync.lastPingMs}ms`;
+  if (detail) title += ` · ${detail}`;
+  if (dot) dot.title = title;
+
+  if (status) {
+    if (phase === 'connected') status.textContent = `Verbunden${peerCount ? ` (${peerCount})` : ''}`;
+    else if (phase === 'connecting') status.textContent = 'Verbinde …';
+    else if (phase === 'error') status.textContent = 'Fehler';
+    else status.textContent = 'Getrennt';
+  }
+  if (btn) btn.textContent = phase === 'connected' || phase === 'connecting' ? 'Trennen' : 'Verbinden';
   renderSyncPeers();
+}
+
+function startSyncPing() {
+  clearInterval(sync.pingTimer);
+  sync.pingTimer = setInterval(() => {
+    if (!sync.connected) return;
+    const url = relayHealthUrl(syncForm().serverUrl);
+    if (!url) return;
+    const t0 = performance.now();
+    fetch(url, { cache: 'no-store' })
+      .then((r) => { if (r.ok) sync.lastPingMs = Math.round(performance.now() - t0); })
+      .catch(() => { sync.lastPingMs = null; })
+      .finally(() => setSyncState('connected'));
+  }, 30000);
+}
+
+function stopSyncPing() {
+  clearInterval(sync.pingTimer);
+  sync.pingTimer = null;
+  sync.lastPingMs = null;
+}
+
+function setSyncUi(connected) {
+  setSyncState(connected ? 'connected' : 'off');
 }
 
 function renderSyncPeers() {
@@ -125,6 +189,7 @@ function applyPeer(peer, isNew) {
     }
   }
   render();
+  if (sync.connected) setSyncState('connected');
 }
 
 function handleSyncMessage(msg) {
@@ -137,12 +202,8 @@ function handleSyncMessage(msg) {
   if (msg.t === 'peers' && Array.isArray(msg.peers)) {
     sync.peers.clear();
     for (const p of msg.peers) sync.peers.set(p.id, p);
-    if (msg.mapId || msg.mapPins) applyMapState(msg.mapId, msg.mapPins);
+    if (sync.connected) setSyncState('connected');
     render();
-    return;
-  }
-  if (msg.t === 'map' || msg.t === 'mapPins') {
-    handleMapSyncMessage(msg);
     return;
   }
   if (msg.t === 'peer') {
@@ -156,6 +217,7 @@ function handleSyncMessage(msg) {
     if (p) showSyncToast(`${p.name} hat den Raum verlassen`);
     sync.peers.delete(msg.id);
     render();
+    if (sync.connected) setSyncState('connected');
   }
 }
 
@@ -171,20 +233,25 @@ function connectSync() {
   const f = syncForm();
   if (!f.room) {
     showSyncToast('Bitte Raumcode eingeben');
+    setSyncState('error', 'Kein Raumcode');
     return;
   }
 
   saveSyncConfig(f);
   clearTimeout(sync.reconnectTimer);
   sync.manualOff = false;
+  setSyncState('connecting');
 
   try {
     const ws = new WebSocket(f.serverUrl);
     sync.ws = ws;
+    let opened = false;
 
     ws.onopen = () => {
+      opened = true;
       sync.connected = true;
-      setSyncUi(true);
+      setSyncState('connected');
+      startSyncPing();
     };
 
     ws.onmessage = (e) => {
@@ -196,22 +263,31 @@ function connectSync() {
       sync.connected = false;
       sync.ws = null;
       sync.peers.clear();
-      resetMapOnDisconnect();
-      setSyncUi(false);
+      stopSyncPing();
       if (wasConnected && !sync.manualOff) {
-        showSyncToast('Verbindung verloren – neu verbinden …');
+        setSyncState('connecting', 'Neu verbinden …');
+        showSyncToast('Verbindung verloren – neu verbinden in 5s …');
         sync.reconnectTimer = setTimeout(connectSync, 5000);
       } else if (wasConnected) {
+        setSyncState('off');
         showSyncToast('Verbindung getrennt');
+      } else if (!opened && !sync.manualOff) {
+        setSyncState('error', 'Server nicht erreichbar');
+      } else {
+        setSyncState('off');
       }
       sync.manualOff = false;
     };
 
     ws.onerror = () => {
-      if (!sync.connected) showSyncToast('Verbindung fehlgeschlagen');
+      if (!opened) {
+        setSyncState('error', 'Verbindung fehlgeschlagen');
+        showSyncToast('Sync-Fehler: Server nicht erreichbar oder URL falsch');
+      }
     };
   } catch (_) {
-    showSyncToast('Ungültige Server-URL');
+    setSyncState('error', 'Ungültige URL');
+    showSyncToast('Ungültige Server-URL (wss://…)');
   }
 }
 
@@ -219,6 +295,7 @@ function syncDisconnect(manual) {
   sync.manualOff = manual !== false;
   clearTimeout(sync.reconnectTimer);
   sync.reconnectTimer = null;
+  stopSyncPing();
   if (sync.ws) {
     sync.ws.onclose = null;
     sync.ws.close();
@@ -227,13 +304,14 @@ function syncDisconnect(manual) {
   sync.connected = false;
   sync.id = null;
   sync.peers.clear();
-  resetMapOnDisconnect();
-  setSyncUi(false);
+  setSyncState('off');
 }
 
 function wireSync() {
   document.getElementById('btn-sync')?.addEventListener('click', () => {
-    document.getElementById('sync-panel')?.classList.toggle('hidden');
+    const panel = document.getElementById('sync-panel');
+    panel?.classList.toggle('hidden');
+    saveUiConfig({ panels: { ...getPanelState(), sync: panel && !panel.classList.contains('hidden') } });
   });
   document.getElementById('sync-connect')?.addEventListener('click', syncConnect);
   document.getElementById('sync-random')?.addEventListener('click', () => {
@@ -326,6 +404,9 @@ function renderEvidenceBar() {
         return;
       }
       if (!state.evidence[ev.key]) delete state.evidence[ev.key];
+      el.classList.remove('ev-pulse');
+      void el.offsetWidth;
+      el.classList.add('ev-pulse');
       render();
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -486,7 +567,9 @@ function reset() {
 // ---- Tools (Timer) ----
 function wireTools() {
   document.getElementById('btn-tools').addEventListener('click', () => {
-    document.getElementById('tools').classList.toggle('hidden');
+    const panel = document.getElementById('tools');
+    panel.classList.toggle('hidden');
+    saveUiConfig({ panels: { ...getPanelState(), tools: panel && !panel.classList.contains('hidden') } });
   });
   document.getElementById('toggle-sound').addEventListener('change', (e) => {
     state.soundOn = e.target.checked;
@@ -508,6 +591,7 @@ function wireTools() {
         huntTime.textContent = 'sicher ✓';
       } else {
         huntTime.textContent = rem + 's';
+        huntTime.className = rem <= 5 ? 'hunt-active hunt-warn' : 'hunt-active';
       }
     }, 1000);
   });
@@ -542,6 +626,53 @@ function wireTools() {
   });
 }
 
+// ---- UI / Theme / Panels ----
+const THEME_ACCENTS = { default: '#7c5cff', midnight: '#4a9eff', ember: '#ff8c42' };
+
+function getPanelState() {
+  return {
+    sync: !document.getElementById('sync-panel')?.classList.contains('hidden'),
+    tools: !document.getElementById('tools')?.classList.contains('hidden'),
+    settings: !document.getElementById('settings')?.classList.contains('hidden'),
+  };
+}
+
+function applyPanels(panels) {
+  if (!panels) return;
+  const map = [
+    ['sync-panel', panels.sync],
+    ['tools', panels.tools],
+    ['settings', panels.settings],
+  ];
+  for (const [id, open] of map) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !open);
+  }
+}
+
+function applyTheme(ui) {
+  const app = document.getElementById('app');
+  if (!app || !ui) return;
+  app.classList.toggle('compact', !!ui.compact);
+  app.classList.remove('theme-midnight', 'theme-ember');
+  if (ui.theme === 'midnight') app.classList.add('theme-midnight');
+  if (ui.theme === 'ember') app.classList.add('theme-ember');
+  const accent = ui.accent || THEME_ACCENTS[ui.theme] || THEME_ACCENTS.default;
+  app.style.setProperty('--accent', accent);
+}
+
+function applyUiFromConfig(cfg) {
+  const ui = cfg.ui || {};
+  applyPanels(ui.panels);
+  applyTheme(ui);
+  const compact = document.getElementById('toggle-compact');
+  const themeSel = document.getElementById('theme-select');
+  const accent = document.getElementById('accent-color');
+  if (compact) compact.checked = !!ui.compact;
+  if (themeSel && ui.theme) themeSel.value = ui.theme;
+  if (accent && ui.accent) accent.value = ui.accent;
+}
+
 // ---- Settings / UI-Buttons ----
 function setHotkeyLabel(binding) {
   const label = (binding && binding.label) || 'H';
@@ -554,10 +685,55 @@ function setHotkeyLabel(binding) {
 function wireUi() {
   document.getElementById('btn-reset').addEventListener('click', reset);
   document.getElementById('btn-settings').addEventListener('click', () => {
-    document.getElementById('settings').classList.toggle('hidden');
+    const panel = document.getElementById('settings');
+    panel.classList.toggle('hidden');
+    saveUiConfig({ panels: { ...getPanelState(), settings: panel && !panel.classList.contains('hidden') } });
   });
   document.getElementById('btn-min').addEventListener('click', () => window.overlay?.minimize());
   document.getElementById('btn-close').addEventListener('click', () => window.overlay?.quit());
+
+  document.getElementById('toggle-compact')?.addEventListener('change', (e) => {
+    saveUiConfig({ compact: e.target.checked });
+    applyTheme({ ...getUiSnapshot(), compact: e.target.checked });
+  });
+  document.getElementById('theme-select')?.addEventListener('change', (e) => {
+    const theme = e.target.value;
+    const accent = THEME_ACCENTS[theme] || THEME_ACCENTS.default;
+    document.getElementById('accent-color').value = accent;
+    saveUiConfig({ theme, accent });
+    applyTheme({ ...getUiSnapshot(), theme, accent });
+  });
+  document.getElementById('accent-color')?.addEventListener('input', (e) => {
+    const accent = e.target.value;
+    saveUiConfig({ accent });
+    applyTheme({ ...getUiSnapshot(), accent });
+  });
+
+  document.getElementById('btn-export-config')?.addEventListener('click', async () => {
+    const r = await window.overlay?.exportConfig?.();
+    showSyncToast(r?.ok ? 'Einstellungen exportiert' : 'Export abgebrochen');
+  });
+  document.getElementById('btn-import-config')?.addEventListener('click', async () => {
+    const r = await window.overlay?.importConfig?.();
+    showSyncToast(r?.ok ? 'Einstellungen importiert' : (r?.error || 'Import fehlgeschlagen'));
+  });
+  document.getElementById('btn-open-logs')?.addEventListener('click', () => window.overlay?.openLogs?.());
+
+  document.getElementById('update-action')?.addEventListener('click', async () => {
+    const btn = document.getElementById('update-action');
+    if (btn?.dataset.mode === 'install') {
+      window.overlay?.installUpdate?.();
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Lädt …';
+    const r = await window.overlay?.downloadUpdate?.();
+    if (!r?.ok) {
+      btn.disabled = false;
+      btn.textContent = 'Jetzt updaten';
+      showSyncToast('Update-Download fehlgeschlagen');
+    }
+  });
 
   document.getElementById('evidence-count').addEventListener('change', (e) => {
     state.visible = parseInt(e.target.value, 10);
@@ -602,10 +778,45 @@ function wireUi() {
     window.overlay.onUpdateStatus((info) => {
       if (!info || !info.available) return;
       const el = document.getElementById('update-banner');
-      el.textContent = `Neue Version ${info.version} verfügbar`;
+      const text = document.getElementById('update-banner-text');
+      const btn = document.getElementById('update-action');
+      if (!el || !text) return;
+      if (info.downloading) {
+        text.textContent = `Update wird geladen … ${info.percent || 0}%`;
+        if (btn) { btn.classList.remove('hidden'); btn.disabled = true; btn.textContent = 'Lädt …'; }
+      } else if (info.downloaded) {
+        text.textContent = `Version ${info.version} bereit – Neustart zum Installieren`;
+        if (btn) {
+          btn.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Neustarten & installieren';
+          btn.dataset.mode = 'install';
+        }
+      } else {
+        text.textContent = `Neue Version ${info.version} verfügbar`;
+        if (btn) {
+          btn.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Jetzt updaten';
+          btn.dataset.mode = 'download';
+        }
+      }
       el.classList.remove('hidden');
     });
+    window.overlay.onConfigImported((cfg) => {
+      if (cfg) applyUiFromConfig(cfg);
+      initFromConfig();
+    });
   }
+}
+
+function getUiSnapshot() {
+  return {
+    compact: document.getElementById('toggle-compact')?.checked,
+    theme: document.getElementById('theme-select')?.value || 'default',
+    accent: document.getElementById('accent-color')?.value,
+    panels: getPanelState(),
+  };
 }
 
 // Gespeicherte Einstellungen laden und in die UI übernehmen.
@@ -613,7 +824,12 @@ async function initFromConfig() {
   if (!window.overlay?.getConfig) return;
   try {
     const cfg = await window.overlay.getConfig();
-    if (cfg.hotkey) setHotkeyLabel(cfg.hotkey);
+    if (cfg.hotkey) {
+      setHotkeyLabel(cfg.hotkey);
+      const frHk = document.getElementById('fr-hotkey');
+      if (frHk) frHk.textContent = cfg.hotkey.label || 'H';
+    }
+    applyUiFromConfig(cfg);
     const op = document.getElementById('opacity');
     const sc = document.getElementById('scale');
     const st = document.getElementById('toggle-stream');
@@ -637,7 +853,7 @@ async function initFromConfig() {
 wireUi();
 wireTools();
 wireSync();
-wireMap();
+wireOnboarding();
 initFromConfig();
 render();
 // Prüfen, ob echte PNGs vorliegen, dann neu rendern.
