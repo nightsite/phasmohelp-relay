@@ -13,6 +13,7 @@ const GAME_EXE = 'Phasmophobia.exe';
 
 let win = null;
 let rendererReady = false;
+let fullBoundsBeforeMini = null;
 let pendingReveal = false;
 let tray = null;
 let clickThrough = false;
@@ -101,7 +102,7 @@ function resolveWindowBounds(cfg) {
 }
 
 function saveBoundsDebounced() {
-  if (!win || win.isDestroyed()) return;
+  if (!win || win.isDestroyed() || !overlayShown) return;
   clearTimeout(boundsSaveTimer);
   boundsSaveTimer = setTimeout(() => {
     const b = win.getBounds();
@@ -178,8 +179,8 @@ function createTray() {
   rebuildTrayMenu();
   tray.on('double-click', () => {
     if (!win || win.isDestroyed()) return;
-    if (win.isVisible()) win.focus();
-    else win.show();
+    setOverlayShown(true);
+    win.focus();
   });
 }
 
@@ -198,16 +199,23 @@ function setOverlayShown(shown) {
   if (!win || win.isDestroyed()) return;
   overlayShown = shown;
   const cfg = config.load();
+  if (!win.isVisible()) win.show();
+  win.setOpacity(clamp(cfg.opacity, 0.2, 1));
   if (shown) {
-    if (!win.isVisible()) win.show();
+    if (fullBoundsBeforeMini) {
+      win.setBounds(fullBoundsBeforeMini);
+      fullBoundsBeforeMini = null;
+    }
+    win.setMinimumSize(280, 200);
     win.setSkipTaskbar(false);
-    win.setOpacity(clamp(cfg.opacity, 0.2, 1));
     win.setIgnoreMouseEvents(clickThrough, { forward: true });
   } else {
-    win.setOpacity(0);
-    win.setIgnoreMouseEvents(true, { forward: true });
+    if (!fullBoundsBeforeMini) fullBoundsBeforeMini = win.getBounds();
+    win.setMinimumSize(32, 32);
     win.setSkipTaskbar(true);
+    win.setIgnoreMouseEvents(true, { forward: true });
   }
+  win.webContents.send('overlay-mode', shown ? 'full' : 'mini');
   rebuildTrayMenu();
 }
 
@@ -468,6 +476,22 @@ ipcMain.handle('show-window', () => revealWindow());
 ipcMain.handle('renderer-ready', () => {
   rendererReady = true;
   revealWindow();
+  win?.webContents.send('overlay-mode', overlayShown ? 'full' : 'mini');
+});
+
+ipcMain.handle('set-mini-bounds', (_e, { width, height }) => {
+  if (!win || win.isDestroyed() || overlayShown) return;
+  const b = win.getBounds();
+  if (!width || !height) {
+    win.setBounds({ x: b.x, y: b.y, width: 1, height: 1 }, false);
+    return;
+  }
+  win.setBounds({
+    x: b.x,
+    y: b.y,
+    width: Math.ceil(Math.max(36, width)),
+    height: Math.ceil(Math.max(32, height)),
+  }, false);
 });
 
 ipcMain.handle('download-update', async () => {

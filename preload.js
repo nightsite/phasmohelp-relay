@@ -32,4 +32,6 @@ contextBridge.exposeInMainWorld('overlay', {
   onEvidenceKey: (cb) => ipcRenderer.on('evidence-key', (_e, index) => cb(index)),
   onUndoEvidence: (cb) => ipcRenderer.on('undo-evidence', () => cb()),
   onSetMinimal: (cb) => ipcRenderer.on('set-minimal', (_e, v) => cb(v)),
+  onOverlayMode: (cb) => ipcRenderer.on('overlay-mode', (_e, mode) => cb(mode)),
+  setMiniBounds: (width, height) => ipcRenderer.invoke('set-mini-bounds', { width, height }),
 });

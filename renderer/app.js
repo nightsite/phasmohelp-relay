@@ -16,6 +16,7 @@ let prevPossibleCount = null;
 const undoStack = [];
 const UNDO_MAX = 20;
 let streamLayoutBackup = null;
+let overlayMode = 'full';
 
 // ---- Sync (Multiplayer) ----
 const sync = {
@@ -587,10 +588,41 @@ function render() {
   // Möglich = passt zu den Beweisen UND nicht manuell abgewählt.
   const possible = GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
   renderEvidenceBar();
+  renderMiniBubbles();
   renderStatus(possible);
   renderGhosts(possible);
   maybeSoundAlarm(possible.length);
   syncPush();
+}
+
+// Mini-Modus ("Overlay aus"): gefundene Beweise als kleine Bubbles anzeigen.
+function renderMiniBubbles() {
+  const el = document.getElementById('mini-bubbles');
+  if (!el) return;
+  const found = EVIDENCE.filter((ev) => state.evidence[ev.key] === 'yes');
+  el.innerHTML = found
+    .map((ev) => `<span class="mini-bubble" title="${ev.name}"><span class="ev-ico">${evIcon(ev)}</span></span>`)
+    .join('');
+  el.classList.toggle('empty', found.length === 0);
+  if (overlayMode === 'mini') scheduleMiniBounds();
+}
+
+function applyOverlayMode(mode) {
+  overlayMode = mode === 'mini' ? 'mini' : 'full';
+  document.getElementById('app')?.classList.toggle('overlay-mini', overlayMode === 'mini');
+  renderMiniBubbles();
+}
+
+function scheduleMiniBounds() {
+  requestAnimationFrame(() => {
+    if (overlayMode !== 'mini') return;
+    const el = document.getElementById('mini-bubbles');
+    if (!el || el.classList.contains('empty')) {
+      window.overlay?.setMiniBounds?.(0, 0);
+      return;
+    }
+    window.overlay?.setMiniBounds?.(el.offsetWidth + 10, el.offsetHeight + 10);
+  });
 }
 
 // Sound + kurzes Aufleuchten, sobald nur noch 1 Geist möglich ist.
@@ -919,6 +951,7 @@ function wireUi() {
     window.overlay.onClickThroughChanged((on) => {
       document.getElementById('clickthrough-banner').classList.toggle('hidden', !on);
     });
+    window.overlay.onOverlayMode?.((mode) => applyOverlayMode(mode));
     window.overlay.onHotkeyCaptured((binding) => {
       setHotkeyLabel(binding);
       btnRebind.textContent = 'Ändern';

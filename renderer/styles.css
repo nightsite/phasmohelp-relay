@@ -749,6 +749,66 @@ footer {
 
 .hidden { display: none !important; }
 
+/* --- Mini-Modus (Overlay aus): nur Beweis-Bubbles --- */
+#mini-bubbles {
+  display: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  pointer-events: none;
+}
+
+#app.overlay-mini {
+  height: auto;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+#app.overlay-mini #titlebar,
+#app.overlay-mini #view-area,
+#app.overlay-mini #sync-toast,
+#app.overlay-mini #first-run,
+#app.overlay-mini #onboarding {
+  display: none !important;
+}
+
+#app.overlay-mini #mini-bubbles {
+  display: flex;
+}
+
+#app.overlay-mini #mini-bubbles.empty {
+  display: none;
+}
+
+.mini-bubble {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 18, 0.82);
+  border: 1.5px solid var(--yes);
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.mini-bubble .ev-ico {
+  line-height: 0;
+}
+
+.mini-bubble .ev-ico svg,
+.mini-bubble .ev-ico img.ico-img {
+  width: 17px;
+  height: 17px;
+  display: block;
+  object-fit: contain;
+}
+
 /* --- Onboarding --- */
 #onboarding {
   position: absolute;
