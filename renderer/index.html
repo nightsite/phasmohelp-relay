@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>Phasmo Overlay</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="titlebar">
+      <span class="title">👻 Phasmo Overlay</span>
+      <div class="title-actions">
+        <button id="btn-map" title="Karte (Grundriss + Pins)">🗺</button>
+        <span id="sync-dot" class="sync-dot off" title="Sync getrennt"></span>
+        <button id="btn-sync" title="Sync (Multiplayer)">🔗</button>
+        <button id="btn-tools" title="Tools (Timer)">🧰</button>
+        <button id="btn-settings" title="Einstellungen">⚙</button>
+        <button id="btn-reset" title="Zurücksetzen (Strg+Shift+R)">⟳</button>
+        <button id="btn-min" title="Minimieren">—</button>
+        <button id="btn-close" title="Schließen">✕</button>
+      </div>
+    </header>
+
+    <div id="clickthrough-banner" class="hidden">
+      Klick-durch AN – Maus geht ans Spiel. Strg+Shift+C zum Zurückschalten.
+    </div>
+    <div id="update-banner" class="hidden"></div>
+    <div id="sync-toast" class="hidden"></div>
+
+    <section id="sync-panel" class="hidden">
+      <div class="sync-head">
+        <span class="sync-title">🔗 Sync – Raum teilen</span>
+        <span id="sync-status" class="sync-status">Getrennt</span>
+      </div>
+      <label class="row">
+        <span>Server</span>
+        <input id="sync-server" type="text" placeholder="wss://phasmohelp-relay.onrender.com" spellcheck="false" />
+      </label>
+      <div class="row">
+        <span>Raumcode</span>
+        <span class="sync-room-set">
+          <input id="sync-room" type="text" maxlength="12" placeholder="ABCD" spellcheck="false" />
+          <button id="sync-random" type="button" title="Zufälliger Code">🎲</button>
+        </span>
+      </div>
+      <label class="row">
+        <span>Name</span>
+        <input id="sync-name" type="text" maxlength="24" placeholder="Spieler" />
+      </label>
+      <label class="row">
+        <span>Farbe</span>
+        <input id="sync-color" type="color" value="#7c5cff" />
+      </label>
+      <div class="row">
+        <span></span>
+        <button id="sync-connect" type="button" class="sync-btn">Verbinden</button>
+      </div>
+      <div id="sync-peers" class="sync-peers"></div>
+      <div class="sync-note">Online über den Relay-Server. Gleicher Raumcode = geteilte Beweise &amp; Karten-Pins.</div>
+    </section>
+
+    <section id="map-panel" class="hidden">
+      <div class="map-toolbar">
+        <select id="map-select" title="Karte wählen"></select>
+        <div id="map-pin-types" class="map-pin-types"></div>
+        <button id="map-clear" type="button" title="Eigene Pins entfernen">🗑</button>
+      </div>
+      <div id="map-canvas" class="map-canvas"></div>
+      <div class="map-hint">Linksklick = Pin · Rechtsklick auf Pin = löschen (nur eigene)</div>
+    </section>
+
+    <section id="settings" class="hidden">
+      <label class="row">
+        <span>Sichtbare Beweise (Schwierigkeit)</span>
+        <select id="evidence-count">
+          <option value="3">3 – Amateur/Mittel/Profi</option>
+          <option value="2">2 – Albtraum</option>
+          <option value="1">1 – Wahnsinn</option>
+          <option value="0">0 – Apokalypse</option>
+        </select>
+      </label>
+      <div class="row">
+        <span>Overlay ein/aus-Taste</span>
+        <span class="hotkey-set"><b id="hotkey-label">H</b><button id="btn-rebind" type="button">Ändern</button></span>
+      </div>
+      <label class="row">
+        <span>Deckkraft</span>
+        <input id="opacity" type="range" min="0.4" max="1" step="0.05" value="1" />
+      </label>
+      <label class="row">
+        <span>Größe</span>
+        <input id="scale" type="range" min="0.7" max="1.8" step="0.1" value="1" />
+      </label>
+      <label class="row checkbox">
+        <input id="toggle-stream" type="checkbox" />
+        <span>Stream-sicher (nicht in OBS/Aufnahmen)</span>
+      </label>
+      <label class="row checkbox">
+        <input id="toggle-impossible" type="checkbox" />
+        <span>Unmögliche Geister anzeigen</span>
+      </label>
+      <label class="row checkbox">
+        <input id="toggle-behaviors" type="checkbox" checked />
+        <span>Verhalten/Tipps anzeigen</span>
+      </label>
+      <label class="row checkbox">
+        <input id="toggle-sound" type="checkbox" checked />
+        <span>Sound-Alarm bei nur 1 Geist</span>
+      </label>
+      <div class="hotkeys">
+        <div><b id="hk-toggle">H</b> – Overlay ein/aus (änderbar)</div>
+        <div><b>Strg+Shift+C</b> – Klick-durch ein/aus</div>
+        <div><b>Strg+Shift+R</b> – Beweise zurücksetzen</div>
+      </div>
+    </section>
+
+    <section id="tools" class="hidden">
+      <div class="tool-row">
+        <span class="tool-label">Jagd-Timer</span>
+        <span class="tool-ctl">
+          <select id="hunt-size">
+            <option value="20">Klein</option>
+            <option value="35" selected>Mittel</option>
+            <option value="50">Groß</option>
+          </select>
+          <button id="hunt-start" type="button">Start</button>
+          <b id="hunt-time">–</b>
+        </span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-label">Sanity</span>
+        <span class="tool-ctl">
+          <select id="sanity-rate">
+            <option value="1.0">Langsam</option>
+            <option value="1.5" selected>Normal</option>
+            <option value="2.2">Schnell</option>
+          </select>
+          <button id="sanity-start" type="button">Start</button>
+          <b id="sanity-val">–</b>
+        </span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-label">Aktivität</span>
+        <span class="tool-ctl">
+          <button id="activity-reset" type="button">Reset</button>
+          <b id="activity-time">00:00</b>
+        </span>
+      </div>
+      <div class="tool-note">Werte sind Schätzungen – Phasmo wird nicht ausgelesen.</div>
+    </section>
+
+    <section id="evidence-bar"></section>
+
+    <div id="status"></div>
+    <div id="next-hint"></div>
+
+    <section id="ghost-list"></section>
+
+    <footer>
+      <span>Beweis: links ✔ / rechts ✕ &nbsp;·&nbsp; Geist: links = offen halten, rechts = abwählen</span>
+    </footer>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="maps.js"></script>
+  <script src="relay-config.js"></script>
+  <script src="map.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
