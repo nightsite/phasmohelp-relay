@@ -16,13 +16,25 @@ const ICONS = {
   dots: `<svg viewBox="0 0 24 24" fill="#3ecf7a" xmlns="http://www.w3.org/2000/svg"><circle cx="4" cy="4" r="1.15"/><circle cx="9.5" cy="4" r="1.15"/><circle cx="15" cy="4" r="1.15"/><circle cx="20.5" cy="4" r="1.15"/><circle cx="4" cy="9.5" r="1.15"/><circle cx="9.5" cy="9.5" r="1.15"/><circle cx="15" cy="9.5" r="1.15"/><circle cx="20.5" cy="9.5" r="1.15"/><circle cx="4" cy="15" r="1.15"/><circle cx="9.5" cy="15" r="1.15"/><circle cx="15" cy="15" r="1.15"/><circle cx="20.5" cy="15" r="1.15"/><circle cx="4" cy="20.5" r="1.15"/><circle cx="9.5" cy="20.5" r="1.15"/><circle cx="15" cy="20.5" r="1.15"/><circle cx="20.5" cy="20.5" r="1.15"/></svg>`,
 };
 
+// Typische Contract-Ziele — manuell abhaken (kein Spiel-Auslesen).
+const OBJECTIVES = [
+  { key: 'identify', label: 'Geist identifizieren' },
+  { key: 'photo', label: 'Geist fotografieren' },
+  { key: 'emf_event', label: 'EMF Level 5 (Event)' },
+  { key: 'ghost_event', label: 'Geister-Event (Video)' },
+  { key: 'dots_sil', label: 'DOTS-Silhouette' },
+  { key: 'crucifix', label: 'Jagd mit Kruzifix stoppen' },
+  { key: 'smudge', label: 'Geist mit Räucherwerk' },
+  { key: 'salt', label: 'Salz getriggert' },
+];
+
 const EVIDENCE = [
   // png wird automatisch verwendet, sobald die Datei existiert – sonst Fallback auf svg.
   { key: 'emf',       short: 'EMF',     name: 'EMF Level 5',                    svg: ICONS.emf,       png: 'icons/emf.png' },
   { key: 'spiritbox', short: 'Box',     name: 'Spirit Box',                     svg: ICONS.spiritbox, png: 'icons/spiritbox.png' },
   { key: 'uv',        short: 'UV',      name: 'Ultraviolett (Fingerabdrücke)',  svg: ICONS.uv },
-  { key: 'orbs',      short: 'Kugeln',  name: 'Geisterkugeln (Orbs)',           svg: ICONS.orbs },
-  { key: 'writing',   short: 'Schrift', name: 'Geisterschrift',                 svg: ICONS.writing },
+  { key: 'orbs',      short: 'Orbs',    name: 'Geisterkugeln (Orbs)',           svg: ICONS.orbs },
+  { key: 'writing',   short: 'Buch',    name: 'Geisterschrift',                 svg: ICONS.writing },
   { key: 'freezing',  short: 'Kälte',   name: 'Gefriertemperaturen',            svg: ICONS.freezing },
   { key: 'dots',      short: 'DOTS',    name: 'D.O.T.S. Projektor',             svg: ICONS.dots },
 ];

@@ -10,6 +10,8 @@ const state = {
   ghostCompact: false,
   ghostSearchQuery: '',
   ghostOnlyPossible: true,
+  objectives: {},
+  suspectGhost: '',
 };
 
 let prevPossibleCount = null;
@@ -486,6 +488,7 @@ function renderStatus(possible) {
 
   status.classList.toggle('solved', possible.length === 1);
   if (possible.length === 1) {
+    state.suspectGhost = possible[0].name;
     status.textContent = `✓ Es ist: ${possible[0].name}`;
   } else if (possible.length === 0) {
     status.textContent = 'Keine Übereinstimmung – Beweise prüfen';
@@ -588,40 +591,72 @@ function render() {
   // Möglich = passt zu den Beweisen UND nicht manuell abgewählt.
   const possible = GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
   renderEvidenceBar();
-  renderMiniBubbles();
+  renderObjectives();
+  renderMiniBubbles(possible);
   renderStatus(possible);
   renderGhosts(possible);
   maybeSoundAlarm(possible.length);
   syncPush();
 }
 
-// Mini-Modus ("Overlay aus"): gefundene Beweise als kleine Bubbles anzeigen.
-function renderMiniBubbles() {
+function getMiniGhostLabel(possible) {
+  if (state.suspectGhost) return state.suspectGhost;
+  if (possible.length === 1) return possible[0].name;
+  if (possible.length === 0) return 'Unbekannt';
+  return `Offen (${possible.length})`;
+}
+
+function renderObjectives() {
+  const panel = document.getElementById('objectives-panel');
+  if (!panel) return;
+  const items = OBJECTIVES.map((obj) => {
+    const done = !!state.objectives[obj.key];
+    return `<label class="obj-item${done ? ' done' : ''}"><input type="checkbox" data-obj="${obj.key}"${done ? ' checked' : ''} /><span>${obj.label}</span></label>`;
+  }).join('');
+  panel.innerHTML = `<div class="obj-head">Contract / Ziele</div><div class="obj-list">${items}</div>`;
+  panel.querySelectorAll('input[data-obj]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      state.objectives[inp.dataset.obj] = inp.checked;
+      render();
+    });
+  });
+}
+
+// Mini-Modus ("Overlay aus"): Geist, Ziele und Beweis-Bubbles.
+function renderMiniBubbles(possible) {
   const el = document.getElementById('mini-bubbles');
   if (!el) return;
+  const poss = possible || GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
+  const ghostLabel = getMiniGhostLabel(poss);
   const found = EVIDENCE.filter((ev) => state.evidence[ev.key] === 'yes');
-  el.innerHTML = found
+  const objHtml = OBJECTIVES.map((obj) => {
+    const done = !!state.objectives[obj.key];
+    return `<span class="mini-obj${done ? ' done' : ''}" title="${obj.label}">${done ? '✓' : '○'} ${obj.label}</span>`;
+  }).join('');
+  const evHtml = found
     .map((ev) => `<span class="mini-bubble" title="${ev.name}"><span class="ev-ico">${evIcon(ev)}</span></span>`)
     .join('');
-  el.classList.toggle('empty', found.length === 0);
+  el.innerHTML =
+    `<div class="mini-ghost" title="Vermuteter / eindeutiger Geist">${ghostLabel}</div>` +
+    `<div class="mini-objs">${objHtml}</div>` +
+    (evHtml ? `<div class="mini-ev-row">${evHtml}</div>` : '');
+  el.classList.remove('empty');
   if (overlayMode === 'mini') scheduleMiniBounds();
 }
 
 function applyOverlayMode(mode) {
   overlayMode = mode === 'mini' ? 'mini' : 'full';
   document.getElementById('app')?.classList.toggle('overlay-mini', overlayMode === 'mini');
-  renderMiniBubbles();
+  const possible = GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
+  renderMiniBubbles(possible);
 }
 
 function scheduleMiniBounds() {
   requestAnimationFrame(() => {
     if (overlayMode !== 'mini') return;
     const el = document.getElementById('mini-bubbles');
-    if (!el || el.classList.contains('empty')) {
-      window.overlay?.setMiniBounds?.(0, 0);
-      return;
-    }
-    window.overlay?.setMiniBounds?.(el.offsetWidth + 10, el.offsetHeight + 10);
+    if (!el) return;
+    window.overlay?.setMiniBounds?.(el.offsetWidth + 12, el.offsetHeight + 12);
   });
 }
 
@@ -660,6 +695,8 @@ function reset() {
   state.evidence = {};
   state.open.clear();
   state.excluded.clear();
+  state.objectives = {};
+  state.suspectGhost = '';
   render();
 }
 

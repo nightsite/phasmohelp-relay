@@ -749,15 +749,56 @@ footer {
 
 .hidden { display: none !important; }
 
-/* --- Mini-Modus (Overlay aus): nur Beweis-Bubbles --- */
+/* --- Objectives (Contract) --- */
+.objectives-panel {
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+.obj-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.obj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.obj-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.obj-item.done span { color: var(--yes); text-decoration: line-through; opacity: 0.85; }
+.obj-item input { flex-shrink: 0; }
+
+#app.compact #objectives-panel { display: none; }
+
+/* --- Mini-Modus (Overlay aus): Geist, Ziele, Bubbles --- */
 #mini-bubbles {
   display: none;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 8px;
   pointer-events: none;
+  min-width: 140px;
+  max-width: 220px;
+  background: rgba(10, 12, 18, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
 #app.overlay-mini {
@@ -782,7 +823,43 @@ footer {
 }
 
 #app.overlay-mini #mini-bubbles.empty {
-  display: none;
+  display: flex;
+}
+
+.mini-ghost {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mini-objs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mini-obj {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-obj.done {
+  color: var(--yes);
+}
+
+.mini-ev-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
 }
 
 .mini-bubble {

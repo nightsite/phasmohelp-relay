@@ -1,6 +1,6 @@
 {
   "name": "phasmo-overlay",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Always-on-top Phasmophobia evidence/ghost cheat-sheet overlay",
   "main": "main.js",
   "repository": {
