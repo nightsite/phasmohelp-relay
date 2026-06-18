@@ -21,6 +21,7 @@
         <button id="btn-reset" type="button" title="Zurücksetzen (Strg+Shift+R)">⟳</button>
       </div>
       <div class="title-drag" aria-hidden="true"></div>
+      <div id="suspect-ghost" class="suspect-ghost" title="Eingegrenzter Geist"></div>
     </header>
 
     <div id="sync-toast" class="hidden"></div>
@@ -43,6 +44,12 @@
 
         <div id="status"></div>
         <div id="next-hint"></div>
+
+        <div id="journal-block" class="journal-block hidden">
+          <span class="journal-icon">👻</span>
+          <input id="journal-name" type="text" placeholder="Geistername (z.B. Harold Martin)" maxlength="32" spellcheck="false" />
+          <span id="journal-src" class="journal-src hidden" title="aus dem Spiel-Journal gelesen">🎮</span>
+        </div>
 
         <div id="objectives-panel" class="objectives-panel"></div>
 
@@ -153,6 +160,15 @@
             <span>Stream-sicher (nicht in OBS/Aufnahmen)</span>
           </label>
           <label class="row checkbox">
+            <input id="toggle-memory" type="checkbox" />
+            <span>Spiel-Journal auslesen ⚠️ <b>EAC-Bann-Risiko</b></span>
+          </label>
+          <div class="settings-note">
+            Liest Geistername &amp; aktive Ziele direkt aus Phasmophobia. Standard: aus.
+            Funktioniert nur mit eingetragenen Offsets (siehe <b>OFFSETS.md</b>); EAC kann den
+            Zugriff blocken – dann bleibt die manuelle Eingabe. Aktivierung auf eigene Gefahr.
+          </div>
+          <label class="row checkbox">
             <input id="toggle-impossible" type="checkbox" />
             <span>Unmögliche Geister anzeigen</span>
           </label>
@@ -172,6 +188,10 @@
             <input id="toggle-animations" type="checkbox" checked />
             <span>Animationen</span>
           </label>
+          <div class="row">
+            <span>Version</span>
+            <span id="app-version" class="app-version">…</span>
+          </div>
           <div class="row">
             <span>Updates</span>
             <button id="btn-check-update" type="button">Nach Update suchen</button>

@@ -8,6 +8,7 @@ const defaults = {
   opacity: 1,
   scale: 1,
   contentProtection: false,
+  memoryReading: false, // Spiel-Journal aus dem Phasmophobia-Speicher lesen (⚠ EAC-Risiko, default aus)
   updateUrl: '',
   sync: { serverUrl: 'wss://phasmohelp-relay.onrender.com', room: '', name: '', color: '' },
   bounds: null,

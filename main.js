@@ -7,6 +7,7 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const config = require('./config');
 const logger = require('./logger');
+const memscan = require('./memscan');
 
 const iconPath = path.join(__dirname, 'build', 'icon.png');
 const GAME_EXE = 'Phasmophobia.exe';
@@ -22,6 +23,9 @@ let capturingHotkey = false;
 let gameRunning = false;
 let gamePollTimer = null;
 let boundsSaveTimer = null;
+let journalTimer = null;
+let journalOffsets = null;
+let lastJournalJson = '';
 
 let UiohookKey = null;
 let keyName = {};
@@ -121,9 +125,69 @@ function notifyGameState(running) {
   if (running) {
     revealWindow();
     win.webContents.send('game-started');
+    startJournalWatcher();
   } else {
     win.webContents.send('game-stopped');
+    stopJournalWatcher();
   }
+}
+
+// --- Journal-Reading (Geistername + Ziele aus dem Spiel-Speicher) ---
+// Standardmäßig AUS (config.memoryReading). Läuft nur, wenn Spiel läuft UND aktiviert.
+// Liefert das Reader-Modul null (EAC/Platzhalter-Offsets), fällt der Renderer auf
+// manuelle Eingabe zurück. Siehe OFFSETS.md.
+function loadJournalOffsets() {
+  const candidates = [
+    path.join(app.getPath('userData'), 'phasmo-offsets.json'),
+    path.join(__dirname, 'phasmo-offsets.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+        logger.info('Offsets geladen aus ' + p);
+        return data;
+      }
+    } catch (err) {
+      logger.warn('Offsets lesen fehlgeschlagen (' + p + '): ' + (err && err.message));
+    }
+  }
+  logger.info('Keine Offsets-Datei gefunden – gesucht in: ' + candidates.join(' | '));
+  return null;
+}
+
+function pollJournal() {
+  if (!win || win.isDestroyed()) return;
+  let data = null;
+  try {
+    data = memscan.readJournal(journalOffsets);
+  } catch (err) {
+    logger.warn('Journal-Poll fehlgeschlagen: ' + (err && err.message));
+  }
+  const json = JSON.stringify(data);
+  if (json === lastJournalJson) return;
+  lastJournalJson = json;
+  win.webContents.send('journal-update', data);
+}
+
+function clearJournalTimer() {
+  if (journalTimer) { clearInterval(journalTimer); journalTimer = null; }
+}
+
+function startJournalWatcher() {
+  clearJournalTimer();
+  const cfg = config.load();
+  if (!cfg.memoryReading || !gameRunning || !memscan.available) return;
+  if (!journalOffsets) journalOffsets = loadJournalOffsets();
+  pollJournal();
+  journalTimer = setInterval(pollJournal, 1500);
+}
+
+function stopJournalWatcher() {
+  clearJournalTimer();
+  try { memscan.dispose(); } catch (_) {}
+  lastJournalJson = '';
+  if (win && !win.isDestroyed()) win.webContents.send('journal-update', null);
 }
 
 function pollGame() {
@@ -261,6 +325,7 @@ function createWindow() {
       if (running) {
         gameRunning = true;
         win.webContents.send('game-started');
+        startJournalWatcher();
       }
     });
   });
@@ -441,6 +506,8 @@ if (gotLock) {
     globalShortcut.unregisterAll();
     if (gamePollTimer) clearInterval(gamePollTimer);
     if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+    clearJournalTimer();
+    try { memscan.dispose(); } catch (_) {}
   });
 
   app.on('window-all-closed', () => app.quit());
@@ -452,12 +519,18 @@ ipcMain.handle('get-config', () => {
   return { ...cfg, hotkey: cfg.hotkey || defaultHotkey() };
 });
 
+ipcMain.handle('get-version', () => app.getVersion());
+
 ipcMain.handle('set-config', (_e, patch) => {
   const cfg = config.save(patch || {});
   if (win) {
     if (patch && 'opacity' in patch) win.setOpacity(clamp(cfg.opacity, 0.2, 1));
     if (patch && 'scale' in patch) win.webContents.setZoomFactor(clamp(cfg.scale, 0.6, 2));
     if (patch && 'contentProtection' in patch) win.setContentProtection(!!cfg.contentProtection);
+  }
+  if (patch && 'memoryReading' in patch) {
+    if (cfg.memoryReading) startJournalWatcher();
+    else stopJournalWatcher();
   }
   if (patch?.ui && 'minimal' in patch.ui) rebuildTrayMenu();
   return cfg;

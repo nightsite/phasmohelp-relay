@@ -16,16 +16,18 @@ const ICONS = {
   dots: `<svg viewBox="0 0 24 24" fill="#3ecf7a" xmlns="http://www.w3.org/2000/svg"><circle cx="4" cy="4" r="1.15"/><circle cx="9.5" cy="4" r="1.15"/><circle cx="15" cy="4" r="1.15"/><circle cx="20.5" cy="4" r="1.15"/><circle cx="4" cy="9.5" r="1.15"/><circle cx="9.5" cy="9.5" r="1.15"/><circle cx="15" cy="9.5" r="1.15"/><circle cx="20.5" cy="9.5" r="1.15"/><circle cx="4" cy="15" r="1.15"/><circle cx="9.5" cy="15" r="1.15"/><circle cx="15" cy="15" r="1.15"/><circle cx="20.5" cy="15" r="1.15"/><circle cx="4" cy="20.5" r="1.15"/><circle cx="9.5" cy="20.5" r="1.15"/><circle cx="15" cy="20.5" r="1.15"/><circle cx="20.5" cy="20.5" r="1.15"/></svg>`,
 };
 
-// Typische Contract-Ziele — manuell abhaken (kein Spiel-Auslesen).
+// Typische Contract-Ziele. Manuell abhakbar; optional = zufälliges Vertragsziel
+// (nur diese sollen angezeigt werden, wenn das Journal aus dem Spiel gelesen wird).
+// aliases = Kleinschreib-Teilstrings (DE/EN) zum Matchen der ausgelesenen Journal-Texte.
 const OBJECTIVES = [
-  { key: 'identify', label: 'Geist identifizieren' },
-  { key: 'photo', label: 'Geist fotografieren' },
-  { key: 'emf_event', label: 'EMF Level 5 (Event)' },
-  { key: 'ghost_event', label: 'Geister-Event (Video)' },
-  { key: 'dots_sil', label: 'DOTS-Silhouette' },
-  { key: 'crucifix', label: 'Jagd mit Kruzifix stoppen' },
-  { key: 'smudge', label: 'Geist mit Räucherwerk' },
-  { key: 'salt', label: 'Salz getriggert' },
+  { key: 'identify',    label: 'Geist identifizieren',     optional: false, aliases: ['identif', 'geist identi', 'type of ghost', 'art des geist'] },
+  { key: 'photo',       label: 'Geist fotografieren',      optional: true,  aliases: ['foto', 'photo', 'picture of the ghost'] },
+  { key: 'emf_event',   label: 'EMF Level 5 (Event)',      optional: true,  aliases: ['emf'] },
+  { key: 'ghost_event', label: 'Geister-Event (Video)',    optional: true,  aliases: ['ghost event', 'geister-event', 'geisterereignis', 'witness a ghost'] },
+  { key: 'dots_sil',    label: 'DOTS-Silhouette',          optional: true,  aliases: ['dots', 'd.o.t.s'] },
+  { key: 'crucifix',    label: 'Jagd mit Kruzifix stoppen', optional: true, aliases: ['kruzifix', 'crucifix'] },
+  { key: 'smudge',      label: 'Geist mit Räucherwerk',    optional: true,  aliases: ['räucher', 'raeucher', 'smudge', 'cleanse'] },
+  { key: 'salt',        label: 'Salz getriggert',          optional: true,  aliases: ['salz', 'salt'] },
 ];
 
 const EVIDENCE = [
