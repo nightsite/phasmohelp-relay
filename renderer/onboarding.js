@@ -28,11 +28,13 @@ function applyOnboardingChoices() {
   if (evSel) evSel.value = String(diff);
   hideOnboarding();
   render();
+  syncCustomSelects?.();
 }
 
 function populateOnboardingSelects() {
   const diffSel = document.getElementById('ob-difficulty');
   if (diffSel) diffSel.value = String(state.visible);
+  syncCustomSelects?.();
 }
 
 function showFirstRun() {
@@ -52,20 +54,8 @@ function updateFirstRunStep() {
   for (let i = 1; i <= FIRST_RUN_STEPS; i++) {
     document.getElementById('fr-step-' + i)?.classList.toggle('hidden', i !== firstRunStep);
   }
-  const back = document.getElementById('fr-back');
   const next = document.getElementById('fr-next');
-  if (back) back.classList.toggle('hidden', firstRunStep <= 1);
   if (next) next.textContent = firstRunStep >= FIRST_RUN_STEPS ? 'Fertig' : 'Weiter';
-}
-
-function finishFirstRun() {
-  const diff = parseInt(document.getElementById('fr-difficulty')?.value || '3', 10);
-  state.visible = diff;
-  const evSel = document.getElementById('evidence-count');
-  if (evSel) evSel.value = String(diff);
-  window.overlay?.setConfig({ firstRunComplete: true });
-  hideFirstRun();
-  render();
 }
 
 function wireFirstRun() {
@@ -77,12 +67,17 @@ function wireFirstRun() {
     firstRunStep++;
     updateFirstRunStep();
   });
-  document.getElementById('fr-back')?.addEventListener('click', () => {
-    if (firstRunStep > 1) {
-      firstRunStep--;
-      updateFirstRunStep();
-    }
-  });
+}
+
+function finishFirstRun() {
+  const diff = parseInt(document.getElementById('fr-difficulty')?.value || '3', 10);
+  state.visible = diff;
+  const evSel = document.getElementById('evidence-count');
+  if (evSel) evSel.value = String(diff);
+  window.overlay?.setConfig({ firstRunComplete: true });
+  hideFirstRun();
+  render();
+  syncCustomSelects?.();
 }
 
 async function maybeShowFirstRun() {
@@ -115,5 +110,4 @@ function wireOnboarding() {
     });
   }
 
-  maybeShowFirstRun();
 }

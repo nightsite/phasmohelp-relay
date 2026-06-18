@@ -13,9 +13,14 @@ const defaults = {
   bounds: null,
   ui: {
     compact: false,
-    panels: { sync: false, tools: false, settings: false },
+    minimal: false,
+    streamLayout: false,
+    ghostCompact: false,
+    ghostSearchOnlyPossible: true,
+    page: 'main',
     accent: '#7c5cff',
     theme: 'default',
+    animations: true,
   },
   firstRunComplete: false,
 };
@@ -29,7 +34,16 @@ function ensurePath() {
 }
 
 function mergeUi(raw) {
-  return { ...defaults.ui, ...(raw || {}) };
+  const ui = { ...defaults.ui, ...(raw || {}) };
+  if (!ui.page && ui.panels) {
+    const { sync, settings } = ui.panels;
+    if (settings) ui.page = 'settings';
+    else if (sync) ui.page = 'sync';
+    else ui.page = 'main';
+  }
+  if (!['main', 'sync', 'settings'].includes(ui.page)) ui.page = 'main';
+  delete ui.panels;
+  return ui;
 }
 
 function load() {
@@ -54,7 +68,7 @@ function save(patch) {
   if (patch && patch.sync) next.sync = { ...cur.sync, ...patch.sync };
   if (patch && patch.ui) {
     next.ui = { ...cur.ui, ...patch.ui };
-    if (patch.ui.panels) next.ui.panels = { ...cur.ui.panels, ...patch.ui.panels };
+    if (patch.ui.page) next.ui.page = patch.ui.page;
   }
   cache = next;
   try {

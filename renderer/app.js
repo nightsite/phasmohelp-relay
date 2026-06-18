@@ -6,17 +6,16 @@ const state = {
   showBehaviors: true,
   open: new Set(),       // manuell aufgeklappte (angepinnte) Geister
   excluded: new Set(),   // manuell abgewählte Geister (Rechtsklick)
-  soundOn: true,         // Sound-Alarm bei nur 1 Geist
+  soundOn: true,
+  ghostCompact: false,
+  ghostSearchQuery: '',
+  ghostOnlyPossible: true,
 };
 
-// Jagd-Schwellen (Standard 50%, Ausnahmen hier). Für die Sanity-Warnung.
-const HUNT_PCT = { Demon: 70, Thaye: 75, Mare: 60, Raiju: 65, Shade: 35, Deogen: 40 };
-function huntThreshold(g) {
-  return HUNT_PCT[g.name] != null ? HUNT_PCT[g.name] : 50;
-}
-
-let lastPossible = [];
 let prevPossibleCount = null;
+const undoStack = [];
+const UNDO_MAX = 20;
+let streamLayoutBackup = null;
 
 // ---- Sync (Multiplayer) ----
 const sync = {
@@ -29,7 +28,19 @@ const sync = {
   peers: new Map(),
   pingTimer: null,
   lastPingMs: null,
+  connectAttempts: 0,
 };
+
+// Der Gratis-Relay (Render) schläft nach Leerlauf ein – beim ersten Verbinden
+// mehrfach versuchen, während er aufwacht (~30 s).
+const MAX_WAKE_ATTEMPTS = 4;
+
+function wakeRelay(url) {
+  const h = relayHealthUrl(url);
+  if (!h) return;
+  // Nur anstoßen, Antwort egal – weckt den schlafenden Server.
+  fetch(h, { cache: 'no-store', mode: 'no-cors' }).catch(() => {});
+}
 
 function normalizeWsUrl(url) {
   url = (url || '').trim();
@@ -226,6 +237,7 @@ function syncConnect() {
     syncDisconnect(true);
     return;
   }
+  sync.connectAttempts = 0;
   connectSync();
 }
 
@@ -240,7 +252,14 @@ function connectSync() {
   saveSyncConfig(f);
   clearTimeout(sync.reconnectTimer);
   sync.manualOff = false;
-  setSyncState('connecting');
+  sync.connectAttempts += 1;
+  wakeRelay(f.serverUrl);
+  if (sync.connectAttempts === 1) {
+    setSyncState('connecting', 'verbinde …');
+    showSyncToast('Verbinde … (Server wacht ggf. ~30 s auf)');
+  } else {
+    setSyncState('connecting', `Server wacht auf … (Versuch ${sync.connectAttempts})`);
+  }
 
   try {
     const ws = new WebSocket(f.serverUrl);
@@ -250,6 +269,7 @@ function connectSync() {
     ws.onopen = () => {
       opened = true;
       sync.connected = true;
+      sync.connectAttempts = 0;
       setSyncState('connected');
       startSyncPing();
     };
@@ -272,7 +292,13 @@ function connectSync() {
         setSyncState('off');
         showSyncToast('Verbindung getrennt');
       } else if (!opened && !sync.manualOff) {
-        setSyncState('error', 'Server nicht erreichbar');
+        if (sync.connectAttempts < MAX_WAKE_ATTEMPTS) {
+          setSyncState('connecting', `Server wacht auf … (Versuch ${sync.connectAttempts + 1})`);
+          sync.reconnectTimer = setTimeout(connectSync, 8000);
+        } else {
+          setSyncState('error', 'Server nicht erreichbar');
+          showSyncToast('Server nicht erreichbar – später erneut „Verbinden"');
+        }
       } else {
         setSyncState('off');
       }
@@ -308,18 +334,19 @@ function syncDisconnect(manual) {
 }
 
 function wireSync() {
-  document.getElementById('btn-sync')?.addEventListener('click', () => {
-    const panel = document.getElementById('sync-panel');
-    panel?.classList.toggle('hidden');
-    saveUiConfig({ panels: { ...getPanelState(), sync: panel && !panel.classList.contains('hidden') } });
-  });
+  document.getElementById('btn-sync')?.addEventListener('click', () => navigateTo('sync'));
   document.getElementById('sync-connect')?.addEventListener('click', syncConnect);
   document.getElementById('sync-random')?.addEventListener('click', () => {
     const inp = document.getElementById('sync-room');
     if (inp) inp.value = randomRoom();
   });
+  document.getElementById('sync-copy-room')?.addEventListener('click', copyRoomCode);
 
-  for (const id of ['sync-server', 'sync-room', 'sync-name', 'sync-color']) {
+  const roomInp = document.getElementById('sync-room');
+  roomInp?.addEventListener('input', () => setSyncState(sync.phase));
+  roomInp?.addEventListener('change', () => saveSyncConfig(syncForm()));
+
+  for (const id of ['sync-server', 'sync-name', 'sync-color']) {
     document.getElementById(id)?.addEventListener('change', () => saveSyncConfig(syncForm()));
   }
 }
@@ -367,8 +394,38 @@ function isPossible(ghost) {
   return true;
 }
 
+function pushUndo() {
+  undoStack.push({ ...state.evidence });
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+}
+
+function undoEvidence() {
+  if (!undoStack.length) {
+    showSyncToast('Nichts zum Rückgängigmachen');
+    return;
+  }
+  state.evidence = undoStack.pop();
+  render();
+}
+
+function cycleEvidence(key) {
+  const st = state.evidence[key];
+  pushUndo();
+  if (!st) state.evidence[key] = 'yes';
+  else if (st === 'yes') state.evidence[key] = 'no';
+  else delete state.evidence[key];
+  render();
+}
+
 function remainingToCheck(ghost) {
   return ghost.evidence.filter((k) => !state.evidence[k]);
+}
+
+function setEvidence(key, next) {
+  pushUndo();
+  if (next) state.evidence[key] = next;
+  else delete state.evidence[key];
+  render();
 }
 
 // ---- Rendering ----
@@ -378,36 +435,44 @@ function renderEvidenceBar() {
   for (const ev of EVIDENCE) {
     const st = state.evidence[ev.key];
     const el = document.createElement('div');
-    el.className = 'ev' + (st === 'yes' ? ' yes' : st === 'no' ? ' no' : '');
     const peerMarks = peerMarksFor(ev.key);
+    const conflictPeers = (st === 'yes' || st === 'no') ? peerMarks.filter((p) => p.st && p.st !== st) : [];
+    const conflict = conflictPeers.length > 0;
+    el.className = 'ev' + (st === 'yes' ? ' yes' : st === 'no' ? ' no' : '') + (conflict ? ' conflict' : '');
     const peerHtml = peerMarks.length
       ? `<div class="ev-peers">${peerMarks.map((p) =>
           `<span class="ev-peer" style="background:${p.color}" title="${p.name}: ${p.st === 'yes' ? '✔' : '✕'}"></span>`
         ).join('')}</div>`
+      : '';
+    const conflictHtml = conflict
+      ? `<div class="ev-conflict" title="Konflikt – ${conflictPeers.map((p) => `${p.name}: ${p.st === 'yes' ? '✔' : '✕'}`).join(', ')} · du: ${st === 'yes' ? '✔' : '✕'}">⚠</div>`
       : '';
 
     el.innerHTML =
       `<div class="ev-mark">${st === 'yes' ? '✔' : st === 'no' ? '✕' : ''}</div>` +
       `<div class="ev-ico">${evIcon(ev)}</div>` +
       `<div class="ev-label">${ev.short}</div>` +
-      peerHtml;
+      peerHtml + conflictHtml;
     el.title = ev.name + ' – Links: ausgewählt · Rechts: ausgeschlossen';
 
     // Linksklick = "gefunden" (✔), Rechtsklick = "ausgeschlossen" (✕). Erneut = neutral.
     el.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
-        state.evidence[ev.key] = st === 'yes' ? undefined : 'yes';
+        const next = st === 'yes' ? undefined : 'yes';
+        setEvidence(ev.key, next);
       } else if (e.button === 2) {
         e.preventDefault();
-        state.evidence[ev.key] = st === 'no' ? undefined : 'no';
+        const next = st === 'no' ? undefined : 'no';
+        setEvidence(ev.key, next);
       } else {
         return;
       }
-      if (!state.evidence[ev.key]) delete state.evidence[ev.key];
-      el.classList.remove('ev-pulse');
-      void el.offsetWidth;
-      el.classList.add('ev-pulse');
-      render();
+      const tile = bar.lastChild;
+      if (tile) {
+        tile.classList.remove('ev-pulse');
+        void tile.offsetWidth;
+        tile.classList.add('ev-pulse');
+      }
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     bar.appendChild(el);
@@ -442,25 +507,26 @@ function renderGhosts(possible) {
   const list = document.getElementById('ghost-list');
   list.innerHTML = '';
   const possibleSet = new Set(possible.map((g) => g.name));
+  const q = (state.ghostSearchQuery || '').trim().toLowerCase();
 
-  // Reihenfolge: mögliche zuerst, dann abgewählte, dann (optional) unmögliche.
   const rank = (g) => {
     if (possibleSet.has(g.name)) return 0;
     if (state.excluded.has(g.name)) return 1;
     return 2;
   };
-  const ordered = [...GHOSTS].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  let ordered = [...GHOSTS].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+
+  if (q) ordered = ordered.filter((g) => g.name.toLowerCase().includes(q));
+  if (state.ghostOnlyPossible) ordered = ordered.filter((g) => possibleSet.has(g.name));
 
   for (const g of ordered) {
     const possibleNow = possibleSet.has(g.name);
     const isExcluded = state.excluded.has(g.name);
-    // Abgewählte bleiben sichtbar (damit man sie zurückholen kann),
-    // durch Beweise unmögliche nur, wenn die Option an ist.
-    if (!possibleNow && !isExcluded && !state.showImpossible) continue;
+    if (!possibleNow && !isExcluded && !state.showImpossible && !q) continue;
 
-    // Einziger übriger Geist bleibt automatisch aufgeklappt (grün).
     const pinned = possible.length === 1 && possibleNow;
     const opened = state.open.has(g.name);
+    const showDetails = !state.ghostCompact || opened || pinned;
 
     const card = document.createElement('div');
     card.className =
@@ -468,7 +534,8 @@ function renderGhosts(possible) {
       (possibleNow ? '' : ' impossible') +
       (isExcluded ? ' excluded' : '') +
       (pinned ? ' pinned' : '') +
-      (opened ? ' open' : '');
+      (opened ? ' open' : '') +
+      (state.ghostCompact && !showDetails ? ' ghost-short' : '');
 
     const full = g.orbsAlways ? [...g.evidence, 'orbs'] : g.evidence;
     const icons = full
@@ -480,22 +547,23 @@ function renderGhosts(possible) {
       .join('');
 
     let body = '';
-    body += `<div class="line"><b>Tempo:</b> ${g.speed}</div>`;
-    body += `<div class="line"><b>Jagd:</b> ${g.hunt}</div>`;
-    if (state.showBehaviors) {
-      if (g.ability) body += `<div class="line"><b>Sonderfähigkeit:</b> ${g.ability}</div>`;
-      if (g.strength) body += `<div class="line str"><b>Stärke:</b> ${g.strength}</div>`;
-      if (g.weakness) body += `<div class="line wk"><b>Schwäche:</b> ${g.weakness}</div>`;
-      if (g.behaviors && g.behaviors.length)
-        body += `<div class="line"><b>Verhalten:</b><ul>${g.behaviors.map((b) => `<li>${b}</li>`).join('')}</ul></div>`;
-      if (g.tip) body += `<div class="tip">💡 ${g.tip}</div>`;
+    if (showDetails) {
+      body += `<div class="line"><b>Tempo:</b> ${g.speed}</div>`;
+      body += `<div class="line"><b>Jagd:</b> ${g.hunt}</div>`;
+      if (state.showBehaviors) {
+        if (g.ability) body += `<div class="line"><b>Sonderfähigkeit:</b> ${g.ability}</div>`;
+        if (g.strength) body += `<div class="line str"><b>Stärke:</b> ${g.strength}</div>`;
+        if (g.weakness) body += `<div class="line wk"><b>Schwäche:</b> ${g.weakness}</div>`;
+        if (g.behaviors && g.behaviors.length)
+          body += `<div class="line"><b>Verhalten:</b><ul>${g.behaviors.map((b) => `<li>${b}</li>`).join('')}</ul></div>`;
+        if (g.tip) body += `<div class="tip">💡 ${g.tip}</div>`;
+      }
     }
 
     card.innerHTML =
       `<div class="ghost-head"><span class="ghost-name">${g.name}</span><span class="ghost-icons">${icons}</span></div>` +
       `<div class="ghost-body">${body}</div>`;
 
-    // Linksklick = anpinnen (offen halten), Rechtsklick = Geist ab-/zuwählen.
     const head = card.querySelector('.ghost-head');
     head.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
@@ -518,7 +586,6 @@ function renderGhosts(possible) {
 function render() {
   // Möglich = passt zu den Beweisen UND nicht manuell abgewählt.
   const possible = GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
-  lastPossible = possible;
   renderEvidenceBar();
   renderStatus(possible);
   renderGhosts(possible);
@@ -564,113 +631,148 @@ function reset() {
   render();
 }
 
-// ---- Tools (Timer) ----
-function wireTools() {
-  document.getElementById('btn-tools').addEventListener('click', () => {
-    const panel = document.getElementById('tools');
-    panel.classList.toggle('hidden');
-    saveUiConfig({ panels: { ...getPanelState(), tools: panel && !panel.classList.contains('hidden') } });
-  });
-  document.getElementById('toggle-sound').addEventListener('change', (e) => {
-    state.soundOn = e.target.checked;
-  });
-
-  // Jagd-Timer: Countdown der (geschätzten) Jagddauer je nach Kartengröße.
-  let huntInt = null;
-  const huntTime = document.getElementById('hunt-time');
-  document.getElementById('hunt-start').addEventListener('click', () => {
-    if (huntInt) clearInterval(huntInt);
-    let rem = parseInt(document.getElementById('hunt-size').value, 10);
-    huntTime.className = 'hunt-active';
-    huntTime.textContent = rem + 's';
-    huntInt = setInterval(() => {
-      rem--;
-      if (rem <= 0) {
-        clearInterval(huntInt); huntInt = null;
-        huntTime.className = 'safe';
-        huntTime.textContent = 'sicher ✓';
-      } else {
-        huntTime.textContent = rem + 's';
-        huntTime.className = rem <= 5 ? 'hunt-active hunt-warn' : 'hunt-active';
-      }
-    }, 1000);
-  });
-
-  // Sanity-Schätzer: läuft ab Start herunter, färbt sich an der Jagd-Schwelle rot.
-  let sanityInt = null;
-  const sanityVal = document.getElementById('sanity-val');
-  function updateSanity(s) {
-    const maxThr = lastPossible.length ? Math.max(...lastPossible.map(huntThreshold)) : 50;
-    sanityVal.textContent = Math.round(s) + '%';
-    sanityVal.className = s <= maxThr ? 'warn' : '';
+async function copyRoomCode() {
+  const room = (document.getElementById('sync-room')?.value || '').trim().toUpperCase();
+  if (!room) {
+    showSyncToast('Kein Raumcode zum Kopieren');
+    return;
   }
-  document.getElementById('sanity-start').addEventListener('click', () => {
-    if (sanityInt) clearInterval(sanityInt);
-    let s = 100;
-    const perSec = parseFloat(document.getElementById('sanity-rate').value) / 60;
-    updateSanity(s);
-    sanityInt = setInterval(() => {
-      s -= perSec;
-      if (s <= 0) { s = 0; clearInterval(sanityInt); sanityInt = null; }
-      updateSanity(s);
-    }, 1000);
-  });
-
-  // Aktivitäts-Timer: zählt hoch; Reset setzt auf 0.
-  let actSec = 0;
-  const actTime = document.getElementById('activity-time');
-  const fmt = (t) => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
-  setInterval(() => { actSec++; actTime.textContent = fmt(actSec); }, 1000);
-  document.getElementById('activity-reset').addEventListener('click', () => {
-    actSec = 0; actTime.textContent = fmt(0);
-  });
+  try {
+    await navigator.clipboard.writeText(room);
+    showSyncToast(`Raumcode ${room} kopiert`);
+  } catch (_) {
+    showSyncToast('Kopieren fehlgeschlagen');
+  }
 }
 
-// ---- UI / Theme / Panels ----
+async function applyStreamLayout(enable) {
+  const btn = document.getElementById('btn-stream-layout');
+  if (enable) {
+    const cfg = await window.overlay?.getConfig?.() || {};
+    streamLayoutBackup = {
+      opacity: cfg.opacity ?? 1,
+      scale: cfg.scale ?? 1,
+      compact: !!cfg.ui?.compact,
+      showBehaviors: state.showBehaviors,
+    };
+    window.overlay?.setConfig({ opacity: 0.85, scale: 1.2 });
+    const op = document.getElementById('opacity');
+    const sc = document.getElementById('scale');
+    if (op) op.value = '0.85';
+    if (sc) sc.value = '1.2';
+    state.showBehaviors = false;
+    const beh = document.getElementById('toggle-behaviors');
+    if (beh) beh.checked = false;
+    saveUiConfig({ compact: true, streamLayout: true });
+    applyTheme({ ...getUiSnapshot(), compact: true, streamLayout: true });
+    const compact = document.getElementById('toggle-compact');
+    if (compact) compact.checked = true;
+    if (btn) btn.textContent = 'Stream-Layout aus';
+    render();
+    showSyncToast('Stream-Layout aktiv');
+  } else if (streamLayoutBackup) {
+    const b = streamLayoutBackup;
+    window.overlay?.setConfig({ opacity: b.opacity, scale: b.scale });
+    const op = document.getElementById('opacity');
+    const sc = document.getElementById('scale');
+    if (op) op.value = b.opacity;
+    if (sc) sc.value = b.scale;
+    state.showBehaviors = b.showBehaviors;
+    const beh = document.getElementById('toggle-behaviors');
+    if (beh) beh.checked = b.showBehaviors;
+    saveUiConfig({ compact: b.compact, streamLayout: false });
+    applyTheme({ ...getUiSnapshot(), compact: b.compact, streamLayout: false });
+    const compact = document.getElementById('toggle-compact');
+    if (compact) compact.checked = b.compact;
+    streamLayoutBackup = null;
+    if (btn) btn.textContent = 'Stream-Layout';
+    render();
+    showSyncToast('Stream-Layout aus');
+  }
+}
+
+async function toggleStreamLayout() {
+  const cfg = await window.overlay?.getConfig?.().catch(() => ({}));
+  const on = !!(cfg?.ui?.streamLayout);
+  await applyStreamLayout(!on);
+}
+
+// ---- UI / Theme / Pages ----
 const THEME_ACCENTS = { default: '#7c5cff', midnight: '#4a9eff', ember: '#ff8c42' };
+const PAGES = ['main', 'sync', 'settings'];
+let currentPage = 'main';
+
+function navigateTo(page, { persist = true } = {}) {
+  if (!PAGES.includes(page)) page = 'main';
+  currentPage = page;
+  for (const p of PAGES) {
+    const el = document.getElementById('page-' + p);
+    if (el) el.classList.toggle('hidden', p !== page);
+  }
+  document.getElementById('btn-main')?.classList.toggle('active', page === 'main');
+  document.getElementById('btn-sync')?.classList.toggle('active', page === 'sync');
+  document.getElementById('btn-settings')?.classList.toggle('active', page === 'settings');
+  if (persist) saveUiConfig({ page });
+}
 
 function getPanelState() {
-  return {
-    sync: !document.getElementById('sync-panel')?.classList.contains('hidden'),
-    tools: !document.getElementById('tools')?.classList.contains('hidden'),
-    settings: !document.getElementById('settings')?.classList.contains('hidden'),
-  };
+  return { page: currentPage };
 }
 
-function applyPanels(panels) {
-  if (!panels) return;
-  const map = [
-    ['sync-panel', panels.sync],
-    ['tools', panels.tools],
-    ['settings', panels.settings],
-  ];
-  for (const [id, open] of map) {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle('hidden', !open);
+function applyPanels(ui) {
+  const page = typeof ui === 'string' ? ui : ui?.page;
+  if (page && PAGES.includes(page)) {
+    navigateTo(page, { persist: false });
+    return;
   }
+  if (ui && typeof ui === 'object') {
+    if (ui.settings) navigateTo('settings', { persist: false });
+    else if (ui.sync) navigateTo('sync', { persist: false });
+    else navigateTo('main', { persist: false });
+    return;
+  }
+  navigateTo('main', { persist: false });
 }
 
 function applyTheme(ui) {
   const app = document.getElementById('app');
   if (!app || !ui) return;
   app.classList.toggle('compact', !!ui.compact);
+  app.classList.toggle('minimal', !!ui.minimal);
+  app.classList.toggle('stream-layout', !!ui.streamLayout);
+  app.classList.toggle('no-anim', ui.animations === false);
   app.classList.remove('theme-midnight', 'theme-ember');
   if (ui.theme === 'midnight') app.classList.add('theme-midnight');
   if (ui.theme === 'ember') app.classList.add('theme-ember');
   const accent = ui.accent || THEME_ACCENTS[ui.theme] || THEME_ACCENTS.default;
   app.style.setProperty('--accent', accent);
+  const toolbar = document.getElementById('ghost-toolbar');
+  if (toolbar) toolbar.classList.toggle('hidden', !!ui.compact);
 }
 
 function applyUiFromConfig(cfg) {
   const ui = cfg.ui || {};
-  applyPanels(ui.panels);
+  applyPanels(ui.page ?? ui.panels);
   applyTheme(ui);
+  state.ghostCompact = !!ui.ghostCompact;
+  state.ghostOnlyPossible = ui.ghostSearchOnlyPossible !== false;
   const compact = document.getElementById('toggle-compact');
+  const minimal = document.getElementById('toggle-minimal');
+  const ghostCompact = document.getElementById('toggle-ghost-compact');
+  const ghostOnly = document.getElementById('ghost-only-possible');
   const themeSel = document.getElementById('theme-select');
   const accent = document.getElementById('accent-color');
+  const streamBtn = document.getElementById('btn-stream-layout');
+  const animations = document.getElementById('toggle-animations');
+  if (animations) animations.checked = ui.animations !== false;
   if (compact) compact.checked = !!ui.compact;
+  if (minimal) minimal.checked = !!ui.minimal;
+  if (ghostCompact) ghostCompact.checked = !!ui.ghostCompact;
+  if (ghostOnly) ghostOnly.checked = state.ghostOnlyPossible;
   if (themeSel && ui.theme) themeSel.value = ui.theme;
   if (accent && ui.accent) accent.value = ui.accent;
+  if (streamBtn) streamBtn.textContent = ui.streamLayout ? 'Stream-Layout aus' : 'Stream-Layout';
+  syncCustomSelects?.();
 }
 
 // ---- Settings / UI-Buttons ----
@@ -683,14 +785,31 @@ function setHotkeyLabel(binding) {
 }
 
 function wireUi() {
+  document.getElementById('btn-main')?.addEventListener('click', () => navigateTo('main'));
   document.getElementById('btn-reset').addEventListener('click', reset);
-  document.getElementById('btn-settings').addEventListener('click', () => {
-    const panel = document.getElementById('settings');
-    panel.classList.toggle('hidden');
-    saveUiConfig({ panels: { ...getPanelState(), settings: panel && !panel.classList.contains('hidden') } });
+  document.getElementById('btn-undo')?.addEventListener('click', undoEvidence);
+  document.getElementById('btn-settings').addEventListener('click', () => navigateTo('settings'));
+
+  document.getElementById('btn-stream-layout')?.addEventListener('click', toggleStreamLayout);
+
+  document.getElementById('toggle-minimal')?.addEventListener('change', (e) => {
+    saveUiConfig({ minimal: e.target.checked });
+    applyTheme({ ...getUiSnapshot(), minimal: e.target.checked });
   });
-  document.getElementById('btn-min').addEventListener('click', () => window.overlay?.minimize());
-  document.getElementById('btn-close').addEventListener('click', () => window.overlay?.quit());
+  document.getElementById('toggle-ghost-compact')?.addEventListener('change', (e) => {
+    state.ghostCompact = e.target.checked;
+    saveUiConfig({ ghostCompact: e.target.checked });
+    render();
+  });
+  document.getElementById('ghost-search')?.addEventListener('input', (e) => {
+    state.ghostSearchQuery = e.target.value;
+    render();
+  });
+  document.getElementById('ghost-only-possible')?.addEventListener('change', (e) => {
+    state.ghostOnlyPossible = e.target.checked;
+    saveUiConfig({ ghostSearchOnlyPossible: e.target.checked });
+    render();
+  });
 
   document.getElementById('toggle-compact')?.addEventListener('change', (e) => {
     saveUiConfig({ compact: e.target.checked });
@@ -718,6 +837,19 @@ function wireUi() {
     showSyncToast(r?.ok ? 'Einstellungen importiert' : (r?.error || 'Import fehlgeschlagen'));
   });
   document.getElementById('btn-open-logs')?.addEventListener('click', () => window.overlay?.openLogs?.());
+
+  document.getElementById('btn-check-update')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-check-update');
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Suche …';
+    const r = await window.overlay?.checkUpdate?.();
+    btn.disabled = false; btn.textContent = old;
+    if (!r) return;
+    if (r.reason === 'dev') showSyncToast('Update-Check nur in der gebauten App (.exe)');
+    else if (r.ok && r.available) showSyncToast('Neue Version verfügbar: ' + r.version);
+    else if (r.ok) showSyncToast('Du hast die neueste Version ✓');
+    else showSyncToast('Update-Check fehlgeschlagen');
+  });
 
   document.getElementById('update-action')?.addEventListener('click', async () => {
     const btn = document.getElementById('update-action');
@@ -756,6 +888,13 @@ function wireUi() {
     state.showBehaviors = e.target.checked;
     render();
   });
+  document.getElementById('toggle-sound').addEventListener('change', (e) => {
+    state.soundOn = e.target.checked;
+  });
+  document.getElementById('toggle-animations')?.addEventListener('change', (e) => {
+    saveUiConfig({ animations: e.target.checked });
+    applyTheme({ ...getUiSnapshot(), animations: e.target.checked });
+  });
 
   // Hotkey neu belegen
   const btnRebind = document.getElementById('btn-rebind');
@@ -767,6 +906,16 @@ function wireUi() {
 
   if (window.overlay) {
     window.overlay.onReset(reset);
+    window.overlay.onUndoEvidence?.(() => undoEvidence());
+    window.overlay.onEvidenceKey?.((index) => {
+      if (index >= 0 && index < EVIDENCE.length) cycleEvidence(EVIDENCE[index].key);
+    });
+    window.overlay.onSetMinimal?.((on) => {
+      const el = document.getElementById('toggle-minimal');
+      if (el) el.checked = !!on;
+      saveUiConfig({ minimal: !!on });
+      applyTheme({ ...getUiSnapshot(), minimal: !!on });
+    });
     window.overlay.onClickThroughChanged((on) => {
       document.getElementById('clickthrough-banner').classList.toggle('hidden', !on);
     });
@@ -813,15 +962,20 @@ function wireUi() {
 function getUiSnapshot() {
   return {
     compact: document.getElementById('toggle-compact')?.checked,
+    minimal: document.getElementById('toggle-minimal')?.checked,
+    streamLayout: document.getElementById('btn-stream-layout')?.textContent === 'Stream-Layout aus',
     theme: document.getElementById('theme-select')?.value || 'default',
     accent: document.getElementById('accent-color')?.value,
-    panels: getPanelState(),
+    ghostCompact: document.getElementById('toggle-ghost-compact')?.checked,
+    ghostSearchOnlyPossible: document.getElementById('ghost-only-possible')?.checked,
+    animations: document.getElementById('toggle-animations')?.checked !== false,
+    page: currentPage,
   };
 }
 
 // Gespeicherte Einstellungen laden und in die UI übernehmen.
 async function initFromConfig() {
-  if (!window.overlay?.getConfig) return;
+  if (!window.overlay?.getConfig) return false;
   try {
     const cfg = await window.overlay.getConfig();
     if (cfg.hotkey) {
@@ -830,6 +984,7 @@ async function initFromConfig() {
       if (frHk) frHk.textContent = cfg.hotkey.label || 'H';
     }
     applyUiFromConfig(cfg);
+    if (cfg.ui?.streamLayout) streamLayoutBackup = null;
     const op = document.getElementById('opacity');
     const sc = document.getElementById('scale');
     const st = document.getElementById('toggle-stream');
@@ -846,15 +1001,29 @@ async function initFromConfig() {
     if (room && s.room) room.value = s.room;
     if (name && s.name) name.value = s.name;
     if (color && s.color) color.value = s.color;
-    if (s.room && s.serverUrl) syncConnect();
-  } catch (_) {}
+    return !!(s.room && s.serverUrl);
+  } catch (_) {
+    return false;
+  }
 }
 
-wireUi();
-wireTools();
-wireSync();
-wireOnboarding();
-initFromConfig();
-render();
-// Prüfen, ob echte PNGs vorliegen, dann neu rendern.
-Promise.all(EVIDENCE.map(probePng)).then(render);
+async function boot() {
+  const appEl = document.getElementById('app');
+  appEl?.classList.add('booting');
+
+  wireUi();
+  wireSync();
+  wireOnboarding();
+
+  const shouldSync = await initFromConfig();
+  await Promise.all(EVIDENCE.map(probePng));
+  render();
+
+  appEl?.classList.remove('booting');
+  await window.overlay?.signalReady?.();
+
+  if (shouldSync) syncConnect();
+  maybeShowFirstRun?.();
+}
+
+boot();

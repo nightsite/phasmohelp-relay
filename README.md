@@ -68,9 +68,14 @@ Phasmophobia: **Borderless** oder **Windowed**.
 |---|---|
 | Linksklick Beweis | gefunden ✔ |
 | Rechtsklick Beweis | ausgeschlossen ✕ |
+| `1`–`7` (Haupttastatur/NumPad) | Beweis zyklisch ✔/✕/neutral (nur wenn Overlay sichtbar) |
 | `H` (änderbar) | Overlay ein/aus |
+| `Strg+Z` | Letzten Beweis rückgängig |
 | `Strg+Shift+C` | Klick-durch |
 | `Strg+Shift+R` | Beweise zurücksetzen |
+
+Navigation oben in der Titelleiste: 🖐 Hauptseite · 🔗 Sync · ⚙ Einstellungen · ⟳ Reset.
+Schließen/Minimieren laufen über das **System-Tray** (Rechtsklick aufs Tray-Icon).
 
 ## Releases
 

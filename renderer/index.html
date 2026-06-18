@@ -9,177 +9,193 @@
 <body>
   <div id="app">
     <header id="titlebar">
-      <span class="title">👻 Phasmo Overlay</span>
-      <div class="title-actions">
+      <div class="title-nav">
+        <button id="btn-main" type="button" class="btn-horror active" title="Hauptansicht – Beweise &amp; Geister" aria-current="page">
+          <svg class="horror-hand" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 10V8a1.5 1.5 0 0 1 3 0v5M8 7V5a1.5 1.5 0 0 1 3 0v7M11 8V6a1.5 1.5 0 0 1 3 0v8M14 10v-1a1.5 1.5 0 0 1 3 0v4M17 12v-1a1.5 1.5 0 0 1 2.5 1.1V14a5 5 0 0 1-4.6 5H10.2A6.2 6.2 0 0 1 4 12.8V11a2 2 0 0 1 2-2h1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
         <span id="sync-dot" class="sync-dot off" title="Sync getrennt"></span>
-        <button id="btn-sync" title="Sync (Multiplayer)">🔗</button>
-        <button id="btn-tools" title="Tools (Timer)">🧰</button>
-        <button id="btn-settings" title="Einstellungen">⚙</button>
-        <button id="btn-reset" title="Zurücksetzen (Strg+Shift+R)">⟳</button>
-        <button id="btn-min" title="Minimieren">—</button>
-        <button id="btn-close" title="Schließen">✕</button>
+        <button id="btn-sync" type="button" title="Sync (Multiplayer)">🔗</button>
+        <button id="btn-settings" type="button" title="Einstellungen">⚙</button>
+        <button id="btn-reset" type="button" title="Zurücksetzen (Strg+Shift+R)">⟳</button>
       </div>
+      <div class="title-drag" aria-hidden="true"></div>
     </header>
 
-    <div id="clickthrough-banner" class="hidden">
-      Klick-durch AN – Maus geht ans Spiel. Strg+Shift+C zum Zurückschalten.
-    </div>
-    <div id="update-banner" class="hidden">
-      <span id="update-banner-text"></span>
-      <button id="update-action" type="button" class="update-btn hidden">Jetzt updaten</button>
-    </div>
     <div id="sync-toast" class="hidden"></div>
 
-    <section id="sync-panel" class="hidden">
-      <div class="sync-head">
-        <span class="sync-title">🔗 Sync – Raum teilen</span>
-        <span id="sync-status" class="sync-status">Getrennt</span>
-      </div>
-      <label class="row">
-        <span>Server</span>
-        <input id="sync-server" type="text" placeholder="wss://phasmohelp-relay.onrender.com" spellcheck="false" />
-      </label>
-      <div class="row">
-        <span>Raumcode</span>
-        <span class="sync-room-set">
-          <input id="sync-room" type="text" maxlength="12" placeholder="ABCD" spellcheck="false" />
-          <button id="sync-random" type="button" title="Zufälliger Code">🎲</button>
-        </span>
-      </div>
-      <label class="row">
-        <span>Name</span>
-        <input id="sync-name" type="text" maxlength="24" placeholder="Spieler" />
-      </label>
-      <label class="row">
-        <span>Farbe</span>
-        <input id="sync-color" type="color" value="#7c5cff" />
-      </label>
-      <div class="row">
-        <span></span>
-        <button id="sync-connect" type="button" class="sync-btn">Verbinden</button>
-      </div>
-      <div id="sync-peers" class="sync-peers"></div>
-      <div class="sync-note">Online über den Relay-Server. Gleicher Raumcode = geteilte Beweise.</div>
-    </section>
+    <div id="view-area">
+      <main id="page-main" class="view-page">
+        <div id="clickthrough-banner" class="hidden">
+          Klick-durch AN – Maus geht ans Spiel. Strg+Shift+C zum Zurückschalten.
+        </div>
+        <div id="update-banner" class="hidden">
+          <span id="update-banner-text"></span>
+          <button id="update-action" type="button" class="update-btn hidden">Jetzt updaten</button>
+        </div>
 
-    <section id="settings" class="hidden">
-      <label class="row">
-        <span>Sichtbare Beweise (Schwierigkeit)</span>
-        <select id="evidence-count">
-          <option value="3">3 – Amateur/Mittel/Profi</option>
-          <option value="2">2 – Albtraum</option>
-          <option value="1">1 – Wahnsinn</option>
-          <option value="0">0 – Apokalypse</option>
-        </select>
-      </label>
-      <div class="row">
-        <span>Overlay ein/aus-Taste</span>
-        <span class="hotkey-set"><b id="hotkey-label">H</b><button id="btn-rebind" type="button">Ändern</button></span>
-      </div>
-      <label class="row">
-        <span>Deckkraft</span>
-        <input id="opacity" type="range" min="0.4" max="1" step="0.05" value="1" />
-      </label>
-      <label class="row">
-        <span>Größe</span>
-        <input id="scale" type="range" min="0.7" max="1.8" step="0.1" value="1" />
-      </label>
-      <label class="row checkbox">
-        <input id="toggle-compact" type="checkbox" />
-        <span>Kompakt-Modus (nur Beweise + Status)</span>
-      </label>
-      <label class="row">
-        <span>Theme</span>
-        <select id="theme-select">
-          <option value="default">Standard (Lila)</option>
-          <option value="midnight">Midnight (Blau)</option>
-          <option value="ember">Ember (Orange)</option>
-        </select>
-      </label>
-      <label class="row">
-        <span>Akzentfarbe</span>
-        <input id="accent-color" type="color" value="#7c5cff" />
-      </label>
-      <label class="row checkbox">
-        <input id="toggle-stream" type="checkbox" />
-        <span>Stream-sicher (nicht in OBS/Aufnahmen)</span>
-      </label>
-      <label class="row checkbox">
-        <input id="toggle-impossible" type="checkbox" />
-        <span>Unmögliche Geister anzeigen</span>
-      </label>
-      <label class="row checkbox">
-        <input id="toggle-behaviors" type="checkbox" checked />
-        <span>Verhalten/Tipps anzeigen</span>
-      </label>
-      <label class="row checkbox">
-        <input id="toggle-sound" type="checkbox" checked />
-        <span>Sound-Alarm bei nur 1 Geist</span>
-      </label>
-      <div class="row">
-        <span>Einstellungen</span>
-        <span class="settings-btns">
-          <button id="btn-export-config" type="button">Export</button>
-          <button id="btn-import-config" type="button">Import</button>
-          <button id="btn-open-logs" type="button">Logs</button>
-        </span>
-      </div>
-      <div class="row">
-        <span>Runde neu einrichten</span>
-        <button id="btn-restart-onboarding" type="button">Onboarding ↺</button>
-      </div>
-      <div class="hotkeys">
-        <div><b id="hk-toggle">H</b> – Overlay ein/aus (änderbar)</div>
-        <div><b>Strg+Shift+C</b> – Klick-durch ein/aus</div>
-        <div><b>Strg+Shift+R</b> – Beweise zurücksetzen</div>
-      </div>
-    </section>
+        <div class="main-toolbar">
+          <button id="btn-undo" type="button" title="Letzten Beweis rückgängig (Strg+Z)">↩ Rückgängig</button>
+        </div>
 
-    <section id="tools" class="hidden">
-      <div class="tool-row">
-        <span class="tool-label">Jagd-Timer</span>
-        <span class="tool-ctl">
-          <select id="hunt-size">
-            <option value="20">Klein</option>
-            <option value="35" selected>Mittel</option>
-            <option value="50">Groß</option>
-          </select>
-          <button id="hunt-start" type="button">Start</button>
-          <b id="hunt-time">–</b>
-        </span>
-      </div>
-      <div class="tool-row">
-        <span class="tool-label">Sanity</span>
-        <span class="tool-ctl">
-          <select id="sanity-rate">
-            <option value="1.0">Langsam</option>
-            <option value="1.5" selected>Normal</option>
-            <option value="2.2">Schnell</option>
-          </select>
-          <button id="sanity-start" type="button">Start</button>
-          <b id="sanity-val">–</b>
-        </span>
-      </div>
-      <div class="tool-row">
-        <span class="tool-label">Aktivität</span>
-        <span class="tool-ctl">
-          <button id="activity-reset" type="button">Reset</button>
-          <b id="activity-time">00:00</b>
-        </span>
-      </div>
-      <div class="tool-note">Werte sind Schätzungen – Phasmo wird nicht ausgelesen.</div>
-    </section>
+        <section id="evidence-bar"></section>
 
-    <section id="evidence-bar"></section>
+        <div id="status"></div>
+        <div id="next-hint"></div>
 
-    <div id="status"></div>
-    <div id="next-hint"></div>
+        <div id="ghost-toolbar" class="ghost-toolbar">
+          <input id="ghost-search" type="text" placeholder="Geist suchen …" spellcheck="false" />
+          <label class="ghost-filter">
+            <input id="ghost-only-possible" type="checkbox" checked />
+            <span>Nur mögliche</span>
+          </label>
+        </div>
 
-    <section id="ghost-list"></section>
+        <section id="ghost-list"></section>
 
-    <footer>
-      <span>Beweis: links ✔ / rechts ✕ &nbsp;·&nbsp; Geist: links = offen halten, rechts = abwählen</span>
-    </footer>
+        <footer>
+          <span>Beweis: links ✔ / rechts ✕ &nbsp;·&nbsp; Geist: links = offen halten, rechts = abwählen</span>
+        </footer>
+      </main>
+
+      <section id="page-sync" class="view-page hidden">
+        <div class="page-header">
+          <h2 class="page-title">🔗 Sync – Raum teilen</h2>
+          <span id="sync-status" class="sync-status">Getrennt</span>
+        </div>
+        <div class="page-body">
+          <label class="row">
+            <span>Server</span>
+            <input id="sync-server" type="text" placeholder="wss://phasmohelp-relay.onrender.com" spellcheck="false" />
+          </label>
+          <div class="row">
+            <span>Raumcode</span>
+            <span class="sync-room-set">
+              <input id="sync-room" class="sync-room-input" type="text" maxlength="12" placeholder="ABCD" spellcheck="false" />
+              <button id="sync-copy-room" type="button" title="Raumcode kopieren">📋</button>
+              <button id="sync-random" type="button" title="Zufälliger Code">🎲</button>
+            </span>
+          </div>
+          <label class="row">
+            <span>Name</span>
+            <input id="sync-name" type="text" maxlength="24" placeholder="Spieler" />
+          </label>
+          <label class="row">
+            <span>Farbe</span>
+            <input id="sync-color" type="color" value="#7c5cff" />
+          </label>
+          <div class="row">
+            <span></span>
+            <button id="sync-connect" type="button" class="sync-btn">Verbinden</button>
+          </div>
+          <div id="sync-peers" class="sync-peers"></div>
+          <div class="sync-note">Farbiger Punkt auf Beweisen = Mitspieler-Markierung. Gleicher Raumcode = geteilte Beweise.</div>
+        </div>
+      </section>
+
+      <section id="page-settings" class="view-page hidden">
+        <div class="page-header">
+          <h2 class="page-title">⚙ Einstellungen</h2>
+        </div>
+        <div class="page-body">
+          <label class="row">
+            <span>Sichtbare Beweise (Schwierigkeit)</span>
+            <select id="evidence-count">
+              <option value="3">3 – Amateur/Mittel/Profi</option>
+              <option value="2">2 – Albtraum</option>
+              <option value="1">1 – Wahnsinn</option>
+              <option value="0">0 – Apokalypse</option>
+            </select>
+          </label>
+          <div class="row">
+            <span>Overlay ein/aus-Taste</span>
+            <span class="hotkey-set"><b id="hotkey-label">H</b><button id="btn-rebind" type="button">Ändern</button></span>
+          </div>
+          <label class="row">
+            <span>Deckkraft</span>
+            <input id="opacity" type="range" min="0.4" max="1" step="0.05" value="1" />
+          </label>
+          <label class="row">
+            <span>Größe</span>
+            <input id="scale" type="range" min="0.7" max="1.8" step="0.1" value="1" />
+          </label>
+          <div class="row">
+            <span>Layout</span>
+            <span class="settings-btns">
+              <button id="btn-stream-layout" type="button">Stream-Layout</button>
+            </span>
+          </div>
+          <label class="row checkbox">
+            <input id="toggle-compact" type="checkbox" />
+            <span>Kompakt-Modus (nur Beweise + Status)</span>
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-minimal" type="checkbox" />
+            <span>Minimal-Chrome (ohne Leiste &amp; Footer)</span>
+          </label>
+          <label class="row">
+            <span>Theme</span>
+            <select id="theme-select">
+              <option value="default">Standard (Lila)</option>
+              <option value="midnight">Midnight (Blau)</option>
+              <option value="ember">Ember (Orange)</option>
+            </select>
+          </label>
+          <label class="row">
+            <span>Akzentfarbe</span>
+            <input id="accent-color" type="color" value="#7c5cff" />
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-stream" type="checkbox" />
+            <span>Stream-sicher (nicht in OBS/Aufnahmen)</span>
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-impossible" type="checkbox" />
+            <span>Unmögliche Geister anzeigen</span>
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-behaviors" type="checkbox" checked />
+            <span>Verhalten/Tipps anzeigen</span>
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-ghost-compact" type="checkbox" />
+            <span>Kurzinfos (Geister nur Name + Beweise)</span>
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-sound" type="checkbox" checked />
+            <span>Sound-Alarm bei nur 1 Geist</span>
+          </label>
+          <label class="row checkbox">
+            <input id="toggle-animations" type="checkbox" checked />
+            <span>Animationen</span>
+          </label>
+          <div class="row">
+            <span>Updates</span>
+            <button id="btn-check-update" type="button">Nach Update suchen</button>
+          </div>
+          <div class="row">
+            <span>Einstellungen</span>
+            <span class="settings-btns">
+              <button id="btn-export-config" type="button">Export</button>
+              <button id="btn-import-config" type="button">Import</button>
+              <button id="btn-open-logs" type="button">Logs</button>
+            </span>
+          </div>
+          <div class="row">
+            <span>Runde neu einrichten</span>
+            <button id="btn-restart-onboarding" type="button">Onboarding ↺</button>
+          </div>
+          <div class="hotkeys">
+            <div><b id="hk-toggle">H</b> – Overlay ein/aus (änderbar)</div>
+            <div><b>1–7</b> – Beweis zyklisch (✔/✕)</div>
+            <div><b>Strg+Z</b> – Letzten Beweis rückgängig</div>
+            <div><b>Strg+Shift+C</b> – Klick-durch ein/aus</div>
+            <div><b>Strg+Shift+R</b> – Beweise zurücksetzen</div>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <div id="first-run" class="hidden">
       <div class="onboarding-card first-run-card">
@@ -196,7 +212,7 @@
           <p class="ob-lead">Optional: Mit 🔗 Sync verbinden — gleicher Raumcode teilt Beweise im Team.</p>
           <label class="ob-row">
             <span>Schwierigkeit</span>
-            <select id="fr-difficulty">
+            <select id="fr-difficulty" class="cselect-block">
               <option value="3">3 Beweise – Amateur/Mittel/Profi</option>
               <option value="2">2 Beweise – Albtraum</option>
               <option value="1">1 Beweis – Wahnsinn</option>
@@ -205,7 +221,6 @@
           </label>
         </div>
         <div class="fr-nav">
-          <button id="fr-back" type="button" class="ob-btn secondary hidden">Zurück</button>
           <button id="fr-next" type="button" class="ob-btn">Weiter</button>
         </div>
       </div>
@@ -217,7 +232,7 @@
         <p class="ob-lead">Phasmophobia erkannt – kurz Schwierigkeit wählen.</p>
         <label class="ob-row">
           <span>Schwierigkeit</span>
-          <select id="ob-difficulty">
+          <select id="ob-difficulty" class="cselect-block">
             <option value="3">3 Beweise – Amateur/Mittel/Profi</option>
             <option value="2">2 Beweise – Albtraum</option>
             <option value="1">1 Beweis – Wahnsinn</option>
@@ -232,6 +247,7 @@
 
   <script src="data.js"></script>
   <script src="relay-config.js"></script>
+  <script src="dropdown.js"></script>
   <script src="onboarding.js"></script>
   <script src="app.js"></script>
 </body>

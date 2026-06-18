@@ -12,8 +12,11 @@ const iconPath = path.join(__dirname, 'build', 'icon.png');
 const GAME_EXE = 'Phasmophobia.exe';
 
 let win = null;
+let rendererReady = false;
+let pendingReveal = false;
 let tray = null;
 let clickThrough = false;
+let overlayShown = true; // logisch sichtbar? (Toggle via Opacity, nicht hide/show)
 let capturingHotkey = false;
 let gameRunning = false;
 let gamePollTimer = null;
@@ -28,7 +31,7 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {
     if (!win || win.isDestroyed()) return;
-    if (!win.isVisible()) win.show();
+    revealWindow();
     win.focus();
   });
 }
@@ -115,7 +118,7 @@ function isGameRunning(cb) {
 function notifyGameState(running) {
   if (!win || win.isDestroyed()) return;
   if (running) {
-    win.show();
+    revealWindow();
     win.webContents.send('game-started');
   } else {
     win.webContents.send('game-stopped');
@@ -141,13 +144,30 @@ function startGameWatcher() {
 
 function rebuildTrayMenu() {
   if (!tray) return;
-  const visible = win && !win.isDestroyed() && win.isVisible();
-  tray.setContextMenu(Menu.buildFromTemplate([
+  const visible = !!win && !win.isDestroyed() && overlayShown;
+  const cfg = config.load();
+  const items = [
     { label: visible ? 'Ausblenden' : 'Einblenden', click: toggleVisibility },
     { label: clickThrough ? 'Klick-durch aus' : 'Klick-durch an', click: () => setClickThrough(!clickThrough) },
-    { type: 'separator' },
-    { label: 'Beenden', click: () => app.quit() },
-  ]));
+  ];
+  if (cfg.ui?.minimal) {
+    items.push({
+      label: 'Minimal-Modus aus',
+      click: () => { if (win) win.webContents.send('set-minimal', false); },
+    });
+  }
+  items.push({ type: 'separator' });
+  items.push({ label: 'Beenden', click: () => app.quit() });
+  tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+// Zifferntasten 1–7 (Haupttastatur + NumPad) für Beweise.
+const EVIDENCE_KEYCODES = new Set([2, 3, 4, 5, 6, 7, 8, 79, 80, 81, 82, 83, 84, 85]);
+
+function evidenceIndexFromKeycode(code) {
+  if (code >= 2 && code <= 8) return code - 2;
+  if (code >= 79 && code <= 85) return code - 79;
+  return -1;
 }
 
 function createTray() {
@@ -163,10 +183,40 @@ function createTray() {
   });
 }
 
+function revealWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (!rendererReady) {
+    pendingReveal = true;
+    return;
+  }
+  setOverlayShown(true);
+}
+
+// Sichtbarkeit über Opacity statt hide/show – so bleibt das (transparente) Fenster
+// dauerhaft gemappt und der Toggle ist sofort & ohne Neu-Zeichnen ("Ladebild").
+function setOverlayShown(shown) {
+  if (!win || win.isDestroyed()) return;
+  overlayShown = shown;
+  const cfg = config.load();
+  if (shown) {
+    if (!win.isVisible()) win.show();
+    win.setSkipTaskbar(false);
+    win.setOpacity(clamp(cfg.opacity, 0.2, 1));
+    win.setIgnoreMouseEvents(clickThrough, { forward: true });
+  } else {
+    win.setOpacity(0);
+    win.setIgnoreMouseEvents(true, { forward: true });
+    win.setSkipTaskbar(true);
+  }
+  rebuildTrayMenu();
+}
+
 function createWindow() {
   const cfg = config.load();
   const bounds = resolveWindowBounds(cfg);
   const icon = getIcon();
+  rendererReady = false;
+  pendingReveal = false;
 
   win = new BrowserWindow({
     ...bounds,
@@ -177,6 +227,7 @@ function createWindow() {
     alwaysOnTop: true,
     hasShadow: false,
     fullscreenable: false,
+    show: false,
     minWidth: 280,
     minHeight: 200,
     backgroundColor: '#00000000',
@@ -215,15 +266,12 @@ function createWindow() {
 
 function toggleVisibility() {
   if (!win) return;
-  if (win.isVisible()) win.hide();
-  else win.show();
-  rebuildTrayMenu();
+  setOverlayShown(!overlayShown);
 }
 
 function minimizeToTray() {
   if (!win) return;
-  win.hide();
-  rebuildTrayMenu();
+  setOverlayShown(false);
 }
 
 function registerInputHook() {
@@ -248,7 +296,14 @@ function registerInputHook() {
         return;
       }
       const hk = currentHotkey();
-      if (hk.type === 'key' && e.keycode === hk.code) fireToggle();
+      if (hk.type === 'key' && e.keycode === hk.code) {
+        fireToggle();
+        return;
+      }
+      if (win && win.isVisible() && !clickThrough && EVIDENCE_KEYCODES.has(e.keycode)) {
+        const idx = evidenceIndexFromKeycode(e.keycode);
+        if (idx >= 0) win.webContents.send('evidence-key', idx);
+      }
     });
 
     uIOhook.on('mousedown', (e) => {
@@ -278,7 +333,7 @@ function finishCapture(binding) {
 function setClickThrough(value) {
   if (!win) return;
   clickThrough = value;
-  win.setIgnoreMouseEvents(value, { forward: true });
+  if (overlayShown) win.setIgnoreMouseEvents(value, { forward: true });
   win.webContents.send('clickthrough-changed', value);
   rebuildTrayMenu();
 }
@@ -288,6 +343,9 @@ function registerShortcuts() {
   globalShortcut.register('CommandOrControl+Shift+C', () => setClickThrough(!clickThrough));
   globalShortcut.register('CommandOrControl+Shift+R', () => {
     if (win) win.webContents.send('reset-evidence');
+  });
+  globalShortcut.register('CommandOrControl+Z', () => {
+    if (win) win.webContents.send('undo-evidence');
   });
 }
 
@@ -342,6 +400,17 @@ function checkForUpdates() {
   });
 }
 
+function isNewerVersion(a, b) {
+  const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
+
 if (gotLock) {
   logger.installGlobalHandlers();
 
@@ -382,6 +451,7 @@ ipcMain.handle('set-config', (_e, patch) => {
     if (patch && 'scale' in patch) win.webContents.setZoomFactor(clamp(cfg.scale, 0.6, 2));
     if (patch && 'contentProtection' in patch) win.setContentProtection(!!cfg.contentProtection);
   }
+  if (patch?.ui && 'minimal' in patch.ui) rebuildTrayMenu();
   return cfg;
 });
 
@@ -394,7 +464,11 @@ ipcMain.handle('set-opacity', (_e, value) => {
 });
 ipcMain.handle('quit', () => app.quit());
 ipcMain.handle('minimize', () => minimizeToTray());
-ipcMain.handle('show-window', () => { if (win) win.show(); });
+ipcMain.handle('show-window', () => revealWindow());
+ipcMain.handle('renderer-ready', () => {
+  rendererReady = true;
+  revealWindow();
+});
 
 ipcMain.handle('download-update', async () => {
   try {
@@ -408,6 +482,18 @@ ipcMain.handle('download-update', async () => {
 
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('check-update', async () => {
+  if (!app.isPackaged) return { ok: false, reason: 'dev' };
+  try {
+    const res = await autoUpdater.checkForUpdates();
+    const v = res && res.updateInfo && res.updateInfo.version;
+    return { ok: true, available: !!(v && isNewerVersion(v, app.getVersion())), version: v };
+  } catch (err) {
+    logger.warn('Manueller Update-Check: ' + (err && err.message));
+    return { ok: false, error: err && err.message };
+  }
 });
 
 ipcMain.handle('export-config', async () => {
