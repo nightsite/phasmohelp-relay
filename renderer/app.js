@@ -13,10 +13,6 @@ const state = {
   objectives: {},
   roundObjectives: [],   // nur die für diese Runde gewählten Ziel-Keys
   suspectGhost: '',
-  // Aus dem Spiel-Journal gelesen (nur wenn Memory-Reading aktiv & lesbar):
-  journal: { ghostName: '', objectives: [], fromGame: false },
-  manualName: '',        // vom Nutzer eingetippter Geistername (Fallback)
-  memoryReading: false,  // Spiel-Journal auslesen aktiv? (steuert Sichtbarkeit des Namens-Blocks)
 };
 
 let objEditMode = false;
@@ -597,7 +593,6 @@ function render() {
   // Möglich = passt zu den Beweisen UND nicht manuell abgewählt.
   const possible = GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
   renderEvidenceBar();
-  renderJournalName();
   renderObjectives();
   renderMiniBubbles(possible);
   renderStatus(possible);
@@ -624,8 +619,6 @@ function renderSuspect(possible) {
 }
 
 function getMiniGhostLabel(possible) {
-  const nm = displayGhostName();
-  if (nm) return nm;
   if (state.suspectGhost) return state.suspectGhost;
   if (possible.length === 1) return possible[0].name;
   if (possible.length === 0) return 'Unbekannt';
@@ -636,51 +629,6 @@ function escHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
-}
-
-// Anzuzeigender In-Game-Geistername: zuerst aus dem Spiel, sonst manuell eingetippt.
-function displayGhostName() {
-  return (state.journal.fromGame && state.journal.ghostName) || state.manualName || '';
-}
-
-// Ordnet einen ausgelesenen Journal-Text einem bekannten Ziel zu (über aliases).
-function matchObjective(text) {
-  const t = String(text || '').toLowerCase();
-  if (!t) return null;
-  return OBJECTIVES.find((o) => (o.aliases || []).some((a) => t.includes(a))) || null;
-}
-
-// Aktive Ziele aus dem Spiel-Journal -> [{ label, done, optional }].
-function journalObjectiveItems() {
-  return (state.journal.objectives || []).map((obj) => {
-    const match = matchObjective(obj.text);
-    return {
-      label: match ? match.label : obj.text,
-      done: !!obj.done,
-      optional: match ? match.optional !== false : true,
-    };
-  }).filter((it) => it.label);
-}
-
-// Geistername-Block: zeigt den In-Game-Namen, sonst editierbares Eingabefeld.
-function renderJournalName() {
-  const block = document.getElementById('journal-block');
-  const input = document.getElementById('journal-name');
-  const src = document.getElementById('journal-src');
-  // Namens-Block nur zeigen, wenn Memory-Reading aktiv ist (sonst cleanes Overlay).
-  if (block) block.classList.toggle('hidden', !state.memoryReading);
-  if (!input || !state.memoryReading) return;
-  const fromGame = state.journal.fromGame && !!state.journal.ghostName;
-  if (fromGame) {
-    if (document.activeElement !== input) input.value = state.journal.ghostName;
-    input.readOnly = true;
-    input.classList.add('from-game');
-  } else {
-    input.readOnly = false;
-    input.classList.remove('from-game');
-    if (document.activeElement !== input) input.value = state.manualName;
-  }
-  if (src) src.classList.toggle('hidden', !fromGame);
 }
 
 function renderObjectives() {
@@ -704,21 +652,6 @@ function renderObjectives() {
       else state.roundObjectives.push(k);
       render();
     }));
-    return;
-  }
-
-  // Aus dem Spiel-Journal gelesen: nur die aktiven Ziele (read-only, ✓/○ aus dem Spiel).
-  if (state.journal.fromGame && state.journal.objectives.length) {
-    const items = journalObjectiveItems();
-    const head = `<div class="obj-head">Ziele dieser Runde <span class="obj-src" title="aus dem Spiel-Journal gelesen">🎮</span></div>`;
-    if (!items.length) {
-      panel.innerHTML = head + `<div class="obj-empty">Keine Ziele im Journal</div>`;
-      return;
-    }
-    const html = items.map((it) =>
-      `<div class="obj-item read${it.done ? ' done' : ''}"><span class="obj-mark">${it.done ? '✓' : '○'}</span><span>${escHtml(it.label)}</span></div>`
-    ).join('');
-    panel.innerHTML = head + `<div class="obj-list">${html}</div>`;
     return;
   }
 
@@ -747,10 +680,8 @@ function renderMiniBubbles(possible) {
   const poss = possible || GHOSTS.filter((g) => isPossible(g) && !state.excluded.has(g.name));
   const ghostLabel = getMiniGhostLabel(poss);
   const found = EVIDENCE.filter((ev) => state.evidence[ev.key] === 'yes');
-  const objSource = (state.journal.fromGame && state.journal.objectives.length)
-    ? journalObjectiveItems().map((it) => ({ label: it.label, done: it.done }))
-    : OBJECTIVES.filter((o) => state.roundObjectives.includes(o.key))
-        .map((o) => ({ label: o.label, done: !!state.objectives[o.key] }));
+  const objSource = OBJECTIVES.filter((o) => state.roundObjectives.includes(o.key))
+    .map((o) => ({ label: o.label, done: !!state.objectives[o.key] }));
   const objHtml = objSource.map((obj) =>
     `<span class="mini-obj${obj.done ? ' done' : ''}" title="${escHtml(obj.label)}">${obj.done ? '✓' : '○'} ${escHtml(obj.label)}</span>`
   ).join('');
@@ -820,7 +751,6 @@ function reset() {
   state.roundObjectives = [];
   objEditMode = false;
   state.suspectGhost = '';
-  state.manualName = ''; // neuer Vertrag -> manuell getippter Name weg (Spiel-Journal aktualisiert sich selbst)
   render();
 }
 
@@ -1073,17 +1003,6 @@ function wireUi() {
   document.getElementById('toggle-stream').addEventListener('change', (e) => {
     window.overlay?.setConfig({ contentProtection: e.target.checked });
   });
-  document.getElementById('toggle-memory')?.addEventListener('change', (e) => {
-    state.memoryReading = e.target.checked;
-    window.overlay?.setConfig({ memoryReading: e.target.checked });
-    if (!e.target.checked) state.journal = { ghostName: '', objectives: [], fromGame: false };
-    render();
-  });
-  document.getElementById('journal-name')?.addEventListener('input', (e) => {
-    if (state.journal.fromGame && state.journal.ghostName) return; // wird vom Spiel gesteuert
-    state.manualName = e.target.value;
-    render();
-  });
   document.getElementById('toggle-impossible').addEventListener('change', (e) => {
     state.showImpossible = e.target.checked;
     render();
@@ -1124,18 +1043,6 @@ function wireUi() {
       document.getElementById('clickthrough-banner').classList.toggle('hidden', !on);
     });
     window.overlay.onOverlayMode?.((mode) => applyOverlayMode(mode));
-    window.overlay.onJournalUpdate?.((data) => {
-      if (data && (data.ghostName || (Array.isArray(data.objectives) && data.objectives.length))) {
-        state.journal = {
-          ghostName: data.ghostName || '',
-          objectives: Array.isArray(data.objectives) ? data.objectives : [],
-          fromGame: true,
-        };
-      } else {
-        state.journal = { ghostName: '', objectives: [], fromGame: false };
-      }
-      render();
-    });
     window.overlay.onHotkeyCaptured((binding) => {
       setHotkeyLabel(binding);
       btnRebind.textContent = 'Ändern';
@@ -1208,9 +1115,6 @@ async function initFromConfig() {
     if (op && typeof cfg.opacity === 'number') op.value = cfg.opacity;
     if (sc && typeof cfg.scale === 'number') sc.value = cfg.scale;
     if (st) st.checked = !!cfg.contentProtection;
-    const mem = document.getElementById('toggle-memory');
-    state.memoryReading = !!cfg.memoryReading;
-    if (mem) mem.checked = !!cfg.memoryReading;
     const s = cfg.sync || {};
     const srv = document.getElementById('sync-server');
     const room = document.getElementById('sync-room');

@@ -30,7 +30,6 @@ contextBridge.exposeInMainWorld('overlay', {
   onConfigImported: (cb) => ipcRenderer.on('config-imported', (_e, cfg) => cb(cfg)),
   onGameStarted: (cb) => ipcRenderer.on('game-started', () => cb()),
   onGameStopped: (cb) => ipcRenderer.on('game-stopped', () => cb()),
-  onJournalUpdate: (cb) => ipcRenderer.on('journal-update', (_e, data) => cb(data)),
   onEvidenceKey: (cb) => ipcRenderer.on('evidence-key', (_e, index) => cb(index)),
   onUndoEvidence: (cb) => ipcRenderer.on('undo-evidence', () => cb()),
   onSetMinimal: (cb) => ipcRenderer.on('set-minimal', (_e, v) => cb(v)),

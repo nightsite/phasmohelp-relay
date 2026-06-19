@@ -1,6 +1,6 @@
 {
   "name": "phasmo-overlay",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Always-on-top Phasmophobia evidence/ghost cheat-sheet overlay",
   "main": "main.js",
   "repository": {
@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
-    "koffi": "^3.0.2",
     "uiohook-napi": "^1.5.5"
   },
   "build": {
@@ -34,17 +33,12 @@
       "config.js",
       "logger.js",
       "preload.js",
-      "memscan.js",
-      "phasmo-offsets.json",
-      "OFFSETS.md",
       "build/icon.png",
       "renderer/**/*",
       "!**/*.map"
     ],
     "asarUnpack": [
-      "**/node_modules/uiohook-napi/**",
-      "**/node_modules/koffi/**",
-      "**/node_modules/@koromix/**"
+      "**/node_modules/uiohook-napi/**"
     ],
     "publish": [
       {
